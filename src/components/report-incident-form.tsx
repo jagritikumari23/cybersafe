@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -32,15 +31,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { CalendarIcon, FileText, Loader2, UploadCloud } from 'lucide-react';
+import { CalendarIcon, FileText, Loader2, UploadCloud, Waypoints } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from "date-fns"
 import { useToast } from '@/hooks/use-toast';
-import { ReportType, type EvidenceFile, ReportStatus, type Report, AITriageCategory, AITriageUrgency } from '@/lib/types';
+import { ReportType, type EvidenceFile, ReportStatus, type Report, AITriageCategory, AITriageUrgency, EscalationTarget, AISuggestedEscalationResult } from '@/lib/types';
 import { addReportToStorage, updateReportInStorage } from '@/lib/report-store';
 import { autoTriage, type AutoTriageInput } from '@/ai/flows/auto-triage';
+import { suggestEscalation, type SuggestEscalationInput } from '@/ai/flows/suggest-escalation-flow';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { addChatMessage } from '@/lib/chat-store';
 
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -50,8 +49,8 @@ const reportSchema = z.object({
   type: z.nativeEnum(ReportType, { required_error: 'Please select a report type.' }),
   description: z.string().min(50, 'Description must be at least 50 characters.').max(5000, 'Description must be at most 5000 characters.'),
   incidentDate: z.date({ required_error: 'Please select the date of the incident.' }),
-  reporterName: z.string().optional(),
-  reporterContact: z.string().optional().refine(val => !val || /^(^\S+@\S+\.\S+$)|(^\d{10}$)/.test(val), {
+  reporterName: z.string().optional().default(''),
+  reporterContact: z.string().optional().default('').refine(val => !val || /^(^\S+@\S+\.\S+$)|(^\d{10}$)/.test(val), {
     message: "Invalid email or 10-digit phone number.",
   }),
   evidenceFiles: z.array(z.custom<File>(val => val instanceof File)).max(5, 'You can upload a maximum of 5 files.').optional(),
@@ -125,87 +124,88 @@ export default function ReportIncidentForm() {
   async function onSubmit(data: ReportFormValues) {
     setIsSubmitting(true);
     const reportId = `CS-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    let completeReport: Report;
+    
+    let currentReport: Report = {
+      id: reportId,
+      type: data.type,
+      description: data.description,
+      incidentDate: data.incidentDate.toISOString(),
+      reporterName: data.reporterName,
+      reporterContact: data.reporterContact,
+      evidenceFiles: selectedFiles,
+      submissionDate: new Date().toISOString(),
+      status: ReportStatus.FILED,
+    };
+    addReportToStorage(currentReport); // Initial save
+    toast({ title: 'Report Filed', description: `Your report ID is ${reportId}. Starting AI analysis.` });
 
     try {
-      
-      const newReportBase: Omit<Report, 'aiTriage' | 'status' | 'assignedOfficerName' | 'chatId'> = {
-        id: reportId,
-        type: data.type,
-        description: data.description,
-        incidentDate: data.incidentDate.toISOString(),
-        reporterName: data.reporterName,
-        reporterContact: data.reporterContact,
-        evidenceFiles: selectedFiles,
-        submissionDate: new Date().toISOString(),
-      };
-      
-      const pendingReport: Report = {
-        ...newReportBase,
-        status: ReportStatus.AI_TRIAGE_PENDING,
-      }
-      addReportToStorage(pendingReport);
-      toast({ title: 'Report Submitted', description: `Your report ID is ${reportId}. AI Triage is in progress.` });
+      // AI Triage
+      currentReport.status = ReportStatus.AI_TRIAGE_PENDING;
+      updateReportInStorage(currentReport);
+      toast({ title: 'Processing...', description: `Report ${reportId}: AI Triage is in progress.`, duration: 2000 });
 
       const triageInput: AutoTriageInput = {
         reportText: `Type: ${data.type}\nDescription: ${data.description}${data.reporterName ? `\nReporter: ${data.reporterName}`: ''}`,
       };
       const triageResult = await autoTriage(triageInput);
       
+      currentReport.aiTriage = {
+          category: triageResult.category as AITriageCategory | string,
+          urgency: triageResult.urgency as AITriageUrgency | string,
+          summary: triageResult.summary,
+      };
+      currentReport.status = ReportStatus.AI_TRIAGE_COMPLETED;
+      updateReportInStorage(currentReport);
+      toast({ title: 'AI Triage Completed', description: `Report ${reportId} analyzed. Category: ${triageResult.category}, Urgency: ${triageResult.urgency}.`, variant: "default" });
+
+      // Escalation Suggestion
+      currentReport.status = ReportStatus.ESCALATION_SUGGESTION_PENDING;
+      updateReportInStorage(currentReport);
+      toast({ title: 'Processing...', description: `Report ${reportId}: Suggesting escalation path.`, duration: 2000 });
+      
+      const escalationInput: SuggestEscalationInput = {
+        reportText: `Type: ${data.type}\nDescription: ${data.description}\nReporter: ${data.reporterName || 'N/A'}\nAI Triage Category: ${triageResult.category}\nAI Triage Urgency: ${triageResult.urgency}\nAI Triage Summary: ${triageResult.summary}`,
+        reportType: data.type,
+      };
+      const escalationResult = await suggestEscalation(escalationInput);
+
+      currentReport.aiEscalation = {
+        target: escalationResult.suggestedTarget as EscalationTarget | string,
+        reasoning: escalationResult.reasoning,
+      };
+      currentReport.status = ReportStatus.ESCALATION_SUGGESTION_COMPLETED;
+      
       let assignedOfficerName: string | undefined = undefined;
       let chatId: string | undefined = undefined;
-      let finalStatus = ReportStatus.AI_TRIAGE_COMPLETED;
-
-      if (triageResult.urgency === AITriageUrgency.HIGH || triageResult.urgency === AITriageUrgency.MEDIUM) {
-        assignedOfficerName = "Officer K";
-        chatId = `chat_${reportId}`;
-        finalStatus = ReportStatus.OFFICER_ASSIGNED;
-      }
       
-      completeReport = {
-        ...newReportBase,
-        aiTriage: {
-            category: triageResult.category as AITriageCategory | string,
-            urgency: triageResult.urgency as AITriageUrgency | string,
-            summary: triageResult.summary,
-        },
-        status: finalStatus,
-        assignedOfficerName: assignedOfficerName,
-        chatId: chatId,
-      };
-
-      updateReportInStorage(completeReport); 
-      const triageToastMessage = finalStatus === ReportStatus.OFFICER_ASSIGNED 
-        ? `Report ${reportId} analyzed. Officer K assigned. You can now chat.`
-        : `Report ${reportId} has been analyzed.`;
-      toast({ title: 'AI Triage Completed', description: triageToastMessage, variant: "default" });
+      if (triageResult.urgency === AITriageUrgency.HIGH || triageResult.urgency === AITriageUrgency.MEDIUM) {
+        assignedOfficerName = "Officer K"; // Mock assignment
+        chatId = `chat_${reportId}`;
+        currentReport.status = ReportStatus.OFFICER_ASSIGNED;
+      }
+      currentReport.assignedOfficerName = assignedOfficerName;
+      currentReport.chatId = chatId;
+      
+      updateReportInStorage(currentReport);
+      const finalToastMessage = currentReport.status === ReportStatus.OFFICER_ASSIGNED
+        ? `Officer K assigned to Report ${reportId}. Escalation: ${escalationResult.suggestedTarget}. You can now chat.`
+        : `Report ${reportId} escalation suggested: ${escalationResult.suggestedTarget}.`;
+      toast({ title: 'Escalation Suggestion Ready', description: finalToastMessage, variant: "default" });
       
       form.reset();
       setSelectedFiles([]);
       router.push(`/track-report?id=${reportId}`);
 
     } catch (error) {
-      console.error('Error submitting report or with AI triage:', error);
-      const errorReport: Report = {
-        id: reportId,
-        type: data.type,
-        description: data.description,
-        incidentDate: data.incidentDate.toISOString(),
-        reporterName: data.reporterName,
-        reporterContact: data.reporterContact,
-        evidenceFiles: selectedFiles,
-        submissionDate: new Date().toISOString(),
-        status: ReportStatus.FILED, 
-         aiTriage: {
-          category: "Error",
-          urgency: "N/A",
-          summary: "AI Triage failed. Please review manually."
-        }
-      }
-      updateReportInStorage(errorReport);
+      console.error('Error during AI processing steps:', error);
+      currentReport.status = ReportStatus.FILED; // Revert status if AI steps fail
+      currentReport.aiTriage = currentReport.aiTriage || { category: "Error", urgency: "N/A", summary: "AI Triage failed."};
+      currentReport.aiEscalation = currentReport.aiEscalation || { target: EscalationTarget.NONE, reasoning: "Escalation suggestion failed."};
+      updateReportInStorage(currentReport);
       toast({
-        title: 'Submission Error',
-        description: 'AI triage failed. Report submitted with basic details. Please try again later or contact support.',
+        title: 'Processing Error',
+        description: 'An error occurred during AI analysis. Report submitted with basic details. Please check tracking for more info.',
         variant: 'destructive',
       });
       router.push(`/track-report?id=${reportId}`);

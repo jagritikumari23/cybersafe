@@ -2,11 +2,11 @@
 'use client';
 
 import type { Report } from '@/lib/types';
-import { ReportStatus, ReportType } from '@/lib/types';
+import { ReportStatus, ReportType, EscalationTarget } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, CheckCircle2, Clock, FileText, Fingerprint, Fish, Landmark, MessagesSquare, Smile, Terminal, User, Bot, MessageSquare as ChatIcon } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, FileText, Fingerprint, Fish, Landmark, MessagesSquare, Smile, Terminal, User, Bot, MessageSquare as ChatIcon, Waypoints, Info } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 
@@ -18,8 +18,10 @@ const getStatusIcon = (status: ReportStatus) => {
   switch (status) {
     case ReportStatus.FILED:
     case ReportStatus.AI_TRIAGE_PENDING:
+    case ReportStatus.ESCALATION_SUGGESTION_PENDING:
       return <Clock className="h-4 w-4 text-yellow-500" />;
     case ReportStatus.AI_TRIAGE_COMPLETED:
+    case ReportStatus.ESCALATION_SUGGESTION_COMPLETED:
     case ReportStatus.OFFICER_ASSIGNED:
     case ReportStatus.INVESTIGATION_UPDATES:
       return <AlertCircle className="h-4 w-4 text-blue-500" />;
@@ -50,6 +52,16 @@ const getUrgencyBadgeVariant = (urgency?: string): "default" | "destructive" | "
         case 'medium': return 'default'; 
         case 'low': return 'secondary';
         default: return 'outline';
+    }
+}
+
+const getEscalationTargetIcon = (target?: EscalationTarget | string) => {
+    const className = "h-4 w-4 mr-2 text-purple-600";
+    // Add more specific icons if available or use a general one
+    switch(target) {
+        case EscalationTarget.CERT_IN: return <Info className={className} />; // Example
+        case EscalationTarget.I4C: return <Landmark className={className} />; // Example
+        default: return <Waypoints className={className} />;
     }
 }
 
@@ -98,6 +110,21 @@ export default function ReportCard({ report }: ReportCardProps) {
             </div>
             <p className="mt-2 text-xs text-muted-foreground italic">
                 <span className="font-medium">Summary: </span>{report.aiTriage.summary}
+            </p>
+          </div>
+        )}
+
+        {report.aiEscalation && (
+          <div className="p-3 bg-purple-500/10 rounded-md border border-purple-500/30">
+            <h4 className="text-sm font-semibold flex items-center text-purple-700 dark:text-purple-300 mb-1">
+                {getEscalationTargetIcon(report.aiEscalation.target)} AI Suggested Escalation
+            </h4>
+            <div className="text-sm">
+                <span className="font-medium text-muted-foreground">Target: </span>
+                <Badge variant="outline" className="border-purple-500 text-purple-700 dark:text-purple-300">{report.aiEscalation.target}</Badge>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground italic">
+                <span className="font-medium">Reasoning: </span>{report.aiEscalation.reasoning}
             </p>
           </div>
         )}
