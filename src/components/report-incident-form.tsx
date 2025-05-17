@@ -53,24 +53,24 @@ const reportSchema = z.object({
   description: z.string().min(50, 'Description must be at least 50 characters.').max(5000, 'Description must be at most 5000 characters.'),
   incidentDate: z.date({ required_error: 'Please select the date of the incident.' }),
   
-  reporterName: z.string().optional().default(''),
-  reporterContact: z.string().optional().default('').refine(val => !val || /^(^\S+@\S+\.\S+$)|(^\d{10}$)/.test(val), {
+  reporterName: z.string().optional(),
+  reporterContact: z.string().optional().refine(val => !val || val === '' || /^(^\S+@\S+\.\S+$)|(^\d{10}$)/.test(val), {
     message: "Invalid email or 10-digit phone number.",
   }),
 
-  suspectPhone: z.string().optional().default(''),
+  suspectPhone: z.string().optional(),
   suspectEmail: z.string().email({ message: "Invalid email address." }).optional().or(z.literal('')),
   suspectIpAddress: z.string().ip({ version: "v4", message: "Invalid IPv4 address." }).optional().or(z.literal('')),
   suspectWebsite: z.string().url({ message: "Invalid URL." }).optional().or(z.literal('')),
-  suspectBankAccount: z.string().optional().default(''),
-  suspectOtherInfo: z.string().max(500, "Suspect details too long").optional().default(''),
+  suspectBankAccount: z.string().optional(),
+  suspectOtherInfo: z.string().max(500, "Suspect details too long").optional(),
 
   locationType: z.enum(['auto', 'manual', 'not_provided']).default('not_provided'),
-  manualLocationCity: z.string().optional().default(''),
-  manualLocationState: z.string().optional().default(''),
-  manualLocationCountry: z.string().optional().default(''),
+  manualLocationCity: z.string().optional(),
+  manualLocationState: z.string().optional(),
+  manualLocationCountry: z.string().optional(),
   
-  additionalEvidenceText: z.string().max(2000, "Additional evidence text too long").optional().default(''),
+  additionalEvidenceText: z.string().max(2000, "Additional evidence text too long").optional(),
   evidenceFiles: z.array(z.custom<File>(val => val instanceof File)).max(5, 'You can upload a maximum of 5 files.').optional(),
 });
 
@@ -181,6 +181,7 @@ export default function ReportIncidentForm() {
     if (form.watch('locationType') === 'auto' && !autoLocation && !isFetchingLocation) {
       fetchUserLocation();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.watch('locationType')]);
 
 
@@ -204,7 +205,7 @@ export default function ReportIncidentForm() {
         city: data.manualLocationCity,
         state: data.manualLocationState,
         country: data.manualLocationCountry,
-        details: `${data.manualLocationCity}, ${data.manualLocationState}, ${data.manualLocationCountry}`.trim(),
+        details: `${data.manualLocationCity || ''}, ${data.manualLocationState || ''}, ${data.manualLocationCountry || ''}`.replace(/^, |, $/g, '').replace(/, ,/g,',').trim(),
       };
     } else {
       incidentLocationData = { type: 'not_provided' };
@@ -231,8 +232,8 @@ export default function ReportIncidentForm() {
       incidentDate: data.incidentDate.toISOString(),
       reporterName: data.reporterName,
       reporterContact: data.reporterContact,
-      suspectDetails: Object.values(suspectDetails).some(val => val && val.length > 0) ? suspectDetails : undefined,
-      incidentLocation: incidentLocationData,
+      suspectDetails: Object.values(suspectDetails).some(val => val && String(val).length > 0) ? suspectDetails : undefined,
+      incidentLocation: incidentLocationData.type !== 'not_provided' && (incidentLocationData.details || incidentLocationData.city) ? incidentLocationData : undefined,
       additionalEvidenceText: data.additionalEvidenceText,
       evidenceFiles: selectedFiles,
       submissionDate: new Date().toISOString(),
@@ -245,7 +246,7 @@ export default function ReportIncidentForm() {
     try {
       // Translation if necessary
       let descriptionForAI = data.description;
-      if (data.originalDescriptionLanguage !== 'en') {
+      if (data.originalDescriptionLanguage !== 'en' && selectedLanguageLabel !== 'English') {
         currentReport.status = ReportStatus.TRANSLATION_PENDING;
         currentReport.timelineNotes = "Report submitted. Translating description to English...";
         updateReportInStorage(currentReport);
@@ -270,7 +271,7 @@ export default function ReportIncidentForm() {
       // AI Triage
       currentReport.status = ReportStatus.AI_TRIAGE_PENDING;
       currentReport.timelineNotes = currentReport.timelineNotes || "Report submitted. AI Triage in progress..."; // Keep previous note if translation happened
-      if (data.originalDescriptionLanguage === 'en') currentReport.timelineNotes = "Report submitted. AI Triage in progress...";
+      if (data.originalDescriptionLanguage === 'en' || selectedLanguageLabel === 'English') currentReport.timelineNotes = "Report submitted. AI Triage in progress...";
       updateReportInStorage(currentReport);
       toast({ title: 'Processing...', description: `Report ${reportId}: AI Triage is in progress.`, duration: 2000 });
 
@@ -298,16 +299,26 @@ export default function ReportIncidentForm() {
       let suspectInfoForAI = "No specific suspect details provided.";
       if (currentReport.suspectDetails) {
         suspectInfoForAI = Object.entries(currentReport.suspectDetails)
-            .filter(([, value]) => value && value.trim() !== "")
+            .filter(([, value]) => value && String(value).trim() !== "")
             .map(([key, value]) => `${key.replace(/([A-Z])/g, ' $1').trim()}: ${value}`) 
             .join(', ') || suspectInfoForAI;
       }
+      
+      let locationInfoForAI = "Location not specified or not relevant.";
+      if (currentReport.incidentLocation && currentReport.incidentLocation.type !== 'not_provided') {
+        if (currentReport.incidentLocation.type === 'auto' && currentReport.incidentLocation.details) {
+            locationInfoForAI = `Incident location (auto-detected): ${currentReport.incidentLocation.details}.`;
+        } else if (currentReport.incidentLocation.type === 'manual') {
+            locationInfoForAI = `Incident location (manual entry): City: ${currentReport.incidentLocation.city || 'N/A'}, State: ${currentReport.incidentLocation.state || 'N/A'}, Country: ${currentReport.incidentLocation.country || 'N/A'}.`;
+        }
+      }
+
 
       const escalationInput: SuggestEscalationInput = {
         reportText: descriptionForAI, // Use potentially translated description
         reportType: data.type,
         suspectInfo: suspectInfoForAI,
-        locationInfo: currentReport.incidentLocation?.details || 'Not specified',
+        locationInfo: locationInfoForAI,
         additionalEvidenceText: data.additionalEvidenceText || 'None',
         triageCategory: triageResult.category,
         triageUrgency: triageResult.urgency,
@@ -538,7 +549,7 @@ export default function ReportIncidentForm() {
                                 <FormField control={form.control} name="manualLocationCity" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="City of incident" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="manualLocationState" render={({ field }) => (<FormItem><FormLabel>State/Province</FormLabel><FormControl><Input placeholder="State/Province" {...field} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
-                            <FormField control={form.control} name="manualLocationCountry" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Country of incident" defaultValue="India" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="manualLocationCountry" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Country of incident" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
                     )}
                 </AccordionContent>
