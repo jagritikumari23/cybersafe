@@ -8,6 +8,7 @@ import type { Report } from '@/lib/types';
 import { getReportsFromStorage } from '@/lib/report-store';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { FileSearch, Info, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
