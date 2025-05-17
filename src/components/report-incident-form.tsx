@@ -31,14 +31,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { AlertTriangle, CalendarIcon, FileText, Globe, Info, Loader2, LocateFixed, MapPin, ShieldQuestion, UploadCloud, User, Waypoints } from 'lucide-react';
+import { AlertTriangle, CalendarIcon, FileText, Globe, Info, Languages, Loader2, LocateFixed, MapPin, ShieldQuestion, UploadCloud, User, Waypoints } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from "date-fns"
 import { useToast } from '@/hooks/use-toast';
-import { ReportType, type EvidenceFile, ReportStatus, type Report, AITriageCategory, AITriageUrgency, EscalationTarget, type SuspectDetails, type IncidentLocation } from '@/lib/types';
+import { ReportType, type EvidenceFile, ReportStatus, type Report, AITriageCategory, AITriageUrgency, EscalationTarget, type SuspectDetails, type IncidentLocation, ComplaintLanguages, type ComplaintLanguageCode } from '@/lib/types';
 import { addReportToStorage, updateReportInStorage } from '@/lib/report-store';
 import { autoTriage, type AutoTriageInput } from '@/ai/flows/auto-triage';
 import { suggestEscalation, type SuggestEscalationInput } from '@/ai/flows/suggest-escalation-flow';
+import { translateText, type TranslateTextInput } from '@/ai/flows/translate-text-flow';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -48,6 +49,7 @@ const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'application/pdf', 'text/
 
 const reportSchema = z.object({
   type: z.nativeEnum(ReportType, { required_error: 'Please select a report type.' }),
+  originalDescriptionLanguage: z.string().min(1, "Please select the language of your description."),
   description: z.string().min(50, 'Description must be at least 50 characters.').max(5000, 'Description must be at most 5000 characters.'),
   incidentDate: z.date({ required_error: 'Please select the date of the incident.' }),
   
@@ -93,6 +95,7 @@ export default function ReportIncidentForm() {
   const form = useForm<ReportFormValues>({
     resolver: zodResolver(reportSchema),
     defaultValues: {
+      originalDescriptionLanguage: 'en', // Default to English
       description: '',
       reporterName: '',
       reporterContact: '',
@@ -105,7 +108,7 @@ export default function ReportIncidentForm() {
       locationType: 'not_provided',
       manualLocationCity: '',
       manualLocationState: '',
-      manualLocationCountry: 'India', // Default to India
+      manualLocationCountry: 'India', 
       additionalEvidenceText: '',
       evidenceFiles: [],
     },
@@ -155,8 +158,6 @@ export default function ReportIncidentForm() {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
-          // Basic reverse geocoding simulation or use a service in a real app
-          // For prototype, we'll just store coords and a placeholder.
           const locationDetails = `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`;
           setAutoLocation({ latitude, longitude, details: locationDetails, country: "India (auto-detected)" });
           form.setValue('locationType', 'auto');
@@ -166,7 +167,7 @@ export default function ReportIncidentForm() {
         (error) => {
           console.error('Error getting location:', error);
           toast({ title: 'Location Error', description: 'Could not fetch location. Please enter manually or ensure permissions are granted.', variant: 'destructive' });
-          form.setValue('locationType', 'manual'); // Fallback to manual
+          form.setValue('locationType', 'manual'); 
           setIsFetchingLocation(false);
         }
       );
@@ -193,8 +194,8 @@ export default function ReportIncidentForm() {
         details: autoLocation.details || 'Auto-detected location',
         latitude: autoLocation.latitude,
         longitude: autoLocation.longitude,
-        city: autoLocation.city, // Would be set by reverse geocoding
-        state: autoLocation.state, // Would be set by reverse geocoding
+        city: autoLocation.city, 
+        state: autoLocation.state, 
         country: autoLocation.country || 'India',
       };
     } else if (data.locationType === 'manual') {
@@ -220,10 +221,13 @@ export default function ReportIncidentForm() {
         otherInfo: data.suspectOtherInfo,
     };
     
+    const selectedLanguageLabel = ComplaintLanguages.find(lang => lang.value === data.originalDescriptionLanguage)?.label || data.originalDescriptionLanguage;
+
     let currentReport: Report = {
       id: reportId,
       type: data.type,
       description: data.description,
+      originalDescriptionLanguage: selectedLanguageLabel,
       incidentDate: data.incidentDate.toISOString(),
       reporterName: data.reporterName,
       reporterContact: data.reporterContact,
@@ -236,17 +240,43 @@ export default function ReportIncidentForm() {
       timelineNotes: "Report submitted. Awaiting initial processing."
     };
     addReportToStorage(currentReport);
-    toast({ title: 'Report Filed', description: `Your report ID is ${reportId}. Starting AI analysis.` });
+    toast({ title: 'Report Filed', description: `Your report ID is ${reportId}. Starting analysis.` });
 
     try {
+      // Translation if necessary
+      let descriptionForAI = data.description;
+      if (data.originalDescriptionLanguage !== 'en') {
+        currentReport.status = ReportStatus.TRANSLATION_PENDING;
+        currentReport.timelineNotes = "Report submitted. Translating description to English...";
+        updateReportInStorage(currentReport);
+        toast({ title: 'Processing...', description: `Report ${reportId}: Translating description to English.`, duration: 2000 });
+
+        const translateInput: TranslateTextInput = {
+          textToTranslate: data.description,
+          targetLanguage: 'English',
+          sourceLanguage: selectedLanguageLabel,
+        };
+        const translationResult = await translateText(translateInput);
+        currentReport.descriptionInEnglish = translationResult.translatedText;
+        descriptionForAI = translationResult.translatedText;
+        currentReport.status = ReportStatus.TRANSLATION_COMPLETED;
+        currentReport.timelineNotes = "Description translated to English. Starting AI Triage...";
+        updateReportInStorage(currentReport);
+        toast({ title: 'Translation Completed', description: `Report ${reportId}: Description translated.`, variant: "default" });
+      } else {
+        currentReport.descriptionInEnglish = data.description; // Original is already English
+      }
+
       // AI Triage
       currentReport.status = ReportStatus.AI_TRIAGE_PENDING;
-      currentReport.timelineNotes = "Report submitted. AI Triage in progress...";
+      currentReport.timelineNotes = currentReport.timelineNotes || "Report submitted. AI Triage in progress..."; // Keep previous note if translation happened
+      if (data.originalDescriptionLanguage === 'en') currentReport.timelineNotes = "Report submitted. AI Triage in progress...";
       updateReportInStorage(currentReport);
       toast({ title: 'Processing...', description: `Report ${reportId}: AI Triage is in progress.`, duration: 2000 });
 
       const triageInput: AutoTriageInput = {
-        reportText: `Type: ${data.type}\nDescription: ${data.description}${data.reporterName ? `\nReporter: ${data.reporterName}`: ''}`,
+        reportText: descriptionForAI, // Use potentially translated description
+        reportType: data.type, // Pass report type to triage
       };
       const triageResult = await autoTriage(triageInput);
       
@@ -269,15 +299,16 @@ export default function ReportIncidentForm() {
       if (currentReport.suspectDetails) {
         suspectInfoForAI = Object.entries(currentReport.suspectDetails)
             .filter(([, value]) => value && value.trim() !== "")
-            .map(([key, value]) => `${key.replace(/([A-Z])/g, ' $1').trim()}: ${value}`) // Add space before caps for readability
+            .map(([key, value]) => `${key.replace(/([A-Z])/g, ' $1').trim()}: ${value}`) 
             .join(', ') || suspectInfoForAI;
       }
 
       const escalationInput: SuggestEscalationInput = {
-        reportText: `Type: ${data.type}. Description: ${data.description}. Incident Location: ${currentReport.incidentLocation?.details || 'Not specified'}. Additional Evidence Text: ${data.additionalEvidenceText || 'None'}.`,
+        reportText: descriptionForAI, // Use potentially translated description
         reportType: data.type,
         suspectInfo: suspectInfoForAI,
         locationInfo: currentReport.incidentLocation?.details || 'Not specified',
+        additionalEvidenceText: data.additionalEvidenceText || 'None',
         triageCategory: triageResult.category,
         triageUrgency: triageResult.urgency,
       };
@@ -289,20 +320,18 @@ export default function ReportIncidentForm() {
       };
       currentReport.status = ReportStatus.ESCALATION_SUGGESTION_COMPLETED;
       
-      // Simulate case acceptance and officer assignment based on urgency
       if (triageResult.urgency === AITriageUrgency.HIGH || triageResult.urgency === AITriageUrgency.MEDIUM) {
-        currentReport.assignedOfficerName = "Officer K (System Assigned)"; // Mock assignment
+        currentReport.assignedOfficerName = "Officer K (System Assigned)"; 
         currentReport.chatId = `chat_${reportId}`;
         currentReport.status = ReportStatus.OFFICER_ASSIGNED;
         currentReport.timelineNotes = `AI analysis complete. Escalation to ${escalationResult.suggestedTarget} suggested. Officer K assigned. Investigation will commence shortly. You can use the chat feature for updates.`;
          toast({ title: 'Officer Assigned & Escalation Suggested', description: `Officer K assigned to Report ${reportId}. Suggested Escalation: ${escalationResult.suggestedTarget}.`, variant: "default", duration: 6000 });
       } else {
-        currentReport.status = ReportStatus.CASE_ACCEPTED; // Case accepted, but not high enough for immediate officer
+        currentReport.status = ReportStatus.CASE_ACCEPTED; 
         currentReport.timelineNotes = `AI analysis complete. Escalation to ${escalationResult.suggestedTarget} suggested. Your case has been accepted and will be reviewed by personnel for further action.`;
         toast({ title: 'Escalation Suggestion Ready', description: `Report ${reportId} processed. Suggested Escalation: ${escalationResult.suggestedTarget}. Case accepted for review.`, variant: "default", duration: 6000 });
       }
 
-      // Simulate notification to authority
       if (escalationResult.suggestedTarget !== EscalationTarget.INTERNAL_REVIEW_FURTHER_INFO_NEEDED) {
         toast({
             title: "Authority Notification (Simulated)",
@@ -328,7 +357,7 @@ export default function ReportIncidentForm() {
       updateReportInStorage(currentReport);
       toast({
         title: 'Processing Error',
-        description: 'An error occurred during AI analysis. Report submitted. It will be manually reviewed.',
+        description: (error instanceof Error ? error.message : 'An error occurred during AI analysis. Report submitted. It will be manually reviewed.'),
         variant: 'destructive',
       });
       router.push(`/track-report?id=${reportId}`);
@@ -389,6 +418,27 @@ export default function ReportIncidentForm() {
                             <Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date > new Date() || date < new Date("1900-01-01")} initialFocus />
                           </PopoverContent>
                         </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="originalDescriptionLanguage"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center"><Languages className="mr-2 h-4 w-4 text-muted-foreground" /> Language of Description</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select language" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {ComplaintLanguages.map((lang) => (
+                              <SelectItem key={lang.value} value={lang.value}>{lang.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>Choose the language you will use for the incident description below.</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -488,7 +538,7 @@ export default function ReportIncidentForm() {
                                 <FormField control={form.control} name="manualLocationCity" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="City of incident" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="manualLocationState" render={({ field }) => (<FormItem><FormLabel>State/Province</FormLabel><FormControl><Input placeholder="State/Province" {...field} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
-                            <FormField control={form.control} name="manualLocationCountry" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Country of incident" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="manualLocationCountry" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Country of incident" defaultValue="India" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
                     )}
                 </AccordionContent>

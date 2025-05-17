@@ -30,6 +30,8 @@ export enum ReportStatus {
   AI_TRIAGE_COMPLETED = 'AI Triage Completed',
   ESCALATION_SUGGESTION_PENDING = 'Escalation Suggestion Pending',
   ESCALATION_SUGGESTION_COMPLETED = 'Escalation Suggestion Completed', // AI part done
+  TRANSLATION_PENDING = 'Translation Pending',
+  TRANSLATION_COMPLETED = 'Translation Completed',
   CASE_ACCEPTED = 'Case Accepted for Review', // Formal acceptance post-AI
   OFFICER_ASSIGNED = 'Investigating Officer Assigned',
   INVESTIGATION_INITIATED = 'Investigation Initiated',
@@ -72,25 +74,27 @@ export interface SuspectDetails {
   phone?: string;
   email?: string;
   ipAddress?: string;
-  website?: string; // Added for websites from decision tree
-  bankAccount?: string; // Added for bank accounts from decision tree
-  otherInfo?: string; // General field for other suspect related info
+  website?: string; 
+  bankAccount?: string; 
+  otherInfo?: string; 
 }
 
 export interface IncidentLocation {
   type: 'auto' | 'manual' | 'not_provided';
   city?: string;
   state?: string;
-  country?: string; // For foreign element detection
-  details?: string; // Full string like "Bihar" or "Mumbai server"
+  country?: string; 
+  details?: string; 
   latitude?: number;
   longitude?: number;
 }
 
 export interface Report {
-  id: string; // Will be more structured, e.g., STATE-CITY-YYYY-#####
+  id: string; 
   type: ReportType;
   description: string;
+  originalDescriptionLanguage?: string; // e.g., "User-Provided", "Hindi", "Tamil"
+  descriptionInEnglish?: string; // Translated description for backend processing
   incidentDate: string; // ISO string
   
   reporterName?: string;
@@ -98,7 +102,7 @@ export interface Report {
   
   suspectDetails?: SuspectDetails;
   incidentLocation?: IncidentLocation;
-  additionalEvidenceText?: string; // For URLs, email contents, etc.
+  additionalEvidenceText?: string; 
 
   evidenceFiles: EvidenceFile[];
   submissionDate: string; // ISO string
@@ -110,7 +114,7 @@ export interface Report {
   assignedOfficerName?: string;
   chatId?: string;
 
-  timelineNotes?: string; // To guide the user on what to expect next
+  timelineNotes?: string; 
 }
 
 export interface ChatMessage {
@@ -120,3 +124,15 @@ export interface ChatMessage {
   text: string;
   timestamp: string; // ISO string
 }
+
+// For the language dropdown in the form
+export const ComplaintLanguages = [
+  { value: 'en', label: 'English' },
+  { value: 'hi', label: 'हिंदी (Hindi)' },
+  { value: 'ta', label: 'தமிழ் (Tamil)' },
+  { value: 'bn', label: 'বাংলা (Bengali)' },
+  { value: 'te', label: 'తెలుగు (Telugu)' },
+  { value: 'mr', label: 'मराठी (Marathi)' },
+  // Add more languages as needed for the simulation
+];
+export type ComplaintLanguageCode = typeof ComplaintLanguages[number]['value'];

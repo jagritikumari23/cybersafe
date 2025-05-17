@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
     AlertCircle, CheckCircle2, Clock, FileText, Fingerprint, Fish, Landmark, MessagesSquare, Smile, Terminal, User, Bot, 
-    MessageSquare as ChatIcon, Waypoints, Info, Building, Globe, ShieldAlert, AlertTriangle, UserCheck, UserCog, SearchCheck, Microscope, CaseUpper
+    MessageSquare as ChatIcon, Waypoints, Info, Building, Globe, ShieldAlert, AlertTriangle, UserCheck, UserCog, SearchCheck, Microscope, CaseUpper, Languages, ExternalLink, PlayCircle
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
@@ -22,6 +22,10 @@ const getStatusIcon = (status: ReportStatus) => {
   switch (status) {
     case ReportStatus.FILED:
       return <FileText className={`${iconClass} text-gray-500`} />;
+    case ReportStatus.TRANSLATION_PENDING:
+      return <Languages className={`${iconClass} text-purple-500`} />;
+    case ReportStatus.TRANSLATION_COMPLETED:
+      return <Languages className={`${iconClass} text-purple-400`} />;
     case ReportStatus.AI_TRIAGE_PENDING:
     case ReportStatus.ESCALATION_SUGGESTION_PENDING:
       return <Clock className={`${iconClass} text-yellow-500`} />;
@@ -83,15 +87,15 @@ const getEscalationTargetIcon = (target?: EscalationTarget | string) => {
 }
 
 const renderSuspectDetails = (suspects?: SuspectDetails) => {
-    if (!suspects || Object.values(suspects).every(val => !val || val.trim() === '')) return null;
+    if (!suspects || Object.values(suspects).every(val => !val || (typeof val === 'string' && val.trim() === ''))) return null;
     return (
         <div>
             <h4 className="text-sm font-semibold text-muted-foreground mt-3 mb-1">Suspect Information</h4>
-            <ul className="list-disc list-inside text-sm space-y-0.5">
+            <ul className="list-disc list-inside text-sm space-y-0.5 text-foreground/80">
                 {suspects.phone && <li>Phone: {suspects.phone}</li>}
                 {suspects.email && <li>Email: {suspects.email}</li>}
                 {suspects.ipAddress && <li>IP Address: {suspects.ipAddress}</li>}
-                {suspects.website && <li>Website: {suspects.website}</li>}
+                {suspects.website && <li>Website: <a href={suspects.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{suspects.website} <ExternalLink className="inline h-3 w-3"/></a></li>}
                 {suspects.bankAccount && <li>Bank Account: {suspects.bankAccount}</li>}
                 {suspects.otherInfo && <li>Other: {suspects.otherInfo}</li>}
             </ul>
@@ -101,11 +105,17 @@ const renderSuspectDetails = (suspects?: SuspectDetails) => {
 
 const renderLocationDetails = (location?: IncidentLocation) => {
     if (!location || location.type === 'not_provided') return null;
+    let displayLocation = location.details || '';
+    if (location.type === 'manual' && !displayLocation) {
+        displayLocation = [location.city, location.state, location.country].filter(Boolean).join(', ');
+    }
+    if (!displayLocation) return null;
+
     return (
         <div>
             <h4 className="text-sm font-semibold text-muted-foreground mt-3 mb-1">Incident Location</h4>
-            <p className="text-sm">
-                {location.details || `${location.city || ''}${location.city && location.state ? ', ' : ''}${location.state || ''}${ (location.city || location.state) && location.country ? ', ' : ''}${location.country || ''}`.trim() || "Not specified"}
+            <p className="text-sm text-foreground/80">
+                {displayLocation}
                 {location.type === 'auto' && <span className="text-xs text-muted-foreground ml-1">(Auto-detected)</span>}
             </p>
         </div>
@@ -134,20 +144,26 @@ export default function ReportCard({ report }: ReportCardProps) {
       <CardContent className="space-y-3">
         <div>
           <h4 className="text-sm font-semibold text-muted-foreground">Incident Date</h4>
-          <p>{format(parseISO(report.incidentDate), 'PPP')}</p>
+          <p className="text-foreground/80">{format(parseISO(report.incidentDate), 'PPP')}</p>
         </div>
         <div>
-          <h4 className="text-sm font-semibold text-muted-foreground">Description</h4>
-          <p className="text-sm line-clamp-3">{report.description}</p>
+          <h4 className="text-sm font-semibold text-muted-foreground">Description <span className="text-xs">({report.originalDescriptionLanguage || 'Language not specified'})</span></h4>
+          <p className="text-sm line-clamp-3 text-foreground/80">{report.description}</p>
         </div>
+        {report.descriptionInEnglish && report.originalDescriptionLanguage !== 'English' && report.originalDescriptionLanguage !== 'en' && (
+             <div>
+                <h4 className="text-sm font-semibold text-muted-foreground">Description (Translated to English)</h4>
+                <p className="text-sm line-clamp-3 bg-muted/30 p-2 rounded-md text-foreground/70">{report.descriptionInEnglish}</p>
+            </div>
+        )}
         
         {renderSuspectDetails(report.suspectDetails)}
         {renderLocationDetails(report.incidentLocation)}
 
         {report.additionalEvidenceText && (
              <div>
-                <h4 className="text-sm font-semibold text-muted-foreground mt-3 mb-1">Additional Evidence Text</h4>
-                <p className="text-sm line-clamp-2 bg-muted/30 p-2 rounded-md">{report.additionalEvidenceText}</p>
+                <h4 className="text-sm font-semibold text-muted-foreground mt-3 mb-1">Additional Evidence Text/URLs</h4>
+                <p className="text-sm line-clamp-2 bg-muted/30 p-2 rounded-md text-foreground/80">{report.additionalEvidenceText}</p>
             </div>
         )}
         
@@ -156,7 +172,7 @@ export default function ReportCard({ report }: ReportCardProps) {
             <h4 className="text-sm font-semibold flex items-center text-accent-foreground/80 mb-1">
                 <Bot className="h-4 w-4 mr-2 text-accent" /> AI Triage Analysis
             </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-foreground/90">
                 <div><span className="font-medium text-muted-foreground">Category: </span><span>{report.aiTriage.category}</span></div>
                 <div><span className="font-medium text-muted-foreground">Urgency: </span><Badge variant={getUrgencyBadgeVariant(report.aiTriage.urgency)} size="sm">{report.aiTriage.urgency}</Badge></div>
             </div>
@@ -169,7 +185,7 @@ export default function ReportCard({ report }: ReportCardProps) {
             <h4 className="text-sm font-semibold flex items-center text-purple-700 dark:text-purple-300 mb-1">
                 {getEscalationTargetIcon(report.aiEscalation.target)} AI Suggested Escalation
             </h4>
-            <div className="text-sm mb-1">
+            <div className="text-sm mb-1 text-foreground/90">
                 <span className="font-medium text-muted-foreground">Target: </span>
                 <Badge variant="outline" className="border-purple-500 text-purple-700 dark:text-purple-300">{report.aiEscalation.target}</Badge>
             </div>
@@ -190,7 +206,7 @@ export default function ReportCard({ report }: ReportCardProps) {
         {report.evidenceFiles && report.evidenceFiles.length > 0 && (
           <div>
             <h4 className="text-sm font-semibold text-muted-foreground mt-3 mb-1">Evidence Files</h4>
-            <ul className="list-disc list-inside text-sm">
+            <ul className="list-disc list-inside text-sm text-foreground/80">
               {report.evidenceFiles.map((file, index) => (
                 <li key={index} className="truncate">
                   <FileText className="inline h-4 w-4 mr-1 text-muted-foreground" />
@@ -203,7 +219,7 @@ export default function ReportCard({ report }: ReportCardProps) {
          {report.reporterName && (
             <div>
                 <h4 className="text-sm font-semibold text-muted-foreground mt-3 mb-1">Reporter</h4>
-                <p className="text-sm flex items-center"><User className="h-4 w-4 mr-1 text-muted-foreground"/> {report.reporterName} {report.reporterContact && `(${report.reporterContact})`}</p>
+                <p className="text-sm flex items-center text-foreground/80"><User className="h-4 w-4 mr-1 text-muted-foreground"/> {report.reporterName} {report.reporterContact && `(${report.reporterContact})`}</p>
             </div>
         )}
         
