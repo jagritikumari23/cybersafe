@@ -2,10 +2,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import type { ChatMessage } from '@/lib/types';
 
-// In a real application, you would store messages in a database.
-// For this prototype, we'll just simulate it. We could use a temporary in-memory store
-// or even write to a file for simple persistence across server restarts if needed,
-// but for now, we'll just echo back and rely on client-side localStorage for display.
+// In-memory store for chat messages (resets on server restart - for prototype purposes)
+const chatMessagesStore: Map<string, ChatMessage[]> = new Map();
 
 export async function POST(
   request: NextRequest,
@@ -36,9 +34,25 @@ export async function POST(
     timestamp: new Date().toISOString(),
   };
 
-  // Here you would typically save the newMessage to your database.
-  // For this example, we're just returning it.
-  console.log(`[API] Received message for chat ${chatId}:`, newMessage);
+  // Store in our server-side in-memory store
+  if (!chatMessagesStore.has(chatId)) {
+    chatMessagesStore.set(chatId, []);
+  }
+  chatMessagesStore.get(chatId)!.push(newMessage);
+
+  console.log(`[API] Stored message for chat ${chatId}. Total messages in store for this chat: ${chatMessagesStore.get(chatId)!.length}`);
 
   return NextResponse.json(newMessage, { status: 201 });
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { chatId: string } }
+) {
+  const { chatId } = params;
+
+  const messages = chatMessagesStore.get(chatId) || [];
+  console.log(`[API] Retrieved ${messages.length} messages for chat ${chatId}`);
+
+  return NextResponse.json(messages, { status: 200 });
 }

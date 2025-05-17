@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { ChatMessage, Report } from '@/lib/types';
-import { getChatMessages, addChatMessage } from '@/lib/chat-store';
+import { addChatMessage } from '@/lib/chat-store'; // getChatMessages is no longer used for initial load
 import { getReportByIdFromStorage } from '@/lib/report-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,21 +33,72 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
     const loadedReport = getReportByIdFromStorage(reportId);
     setReport(loadedReport);
 
-    const loadedMessages = getChatMessages(chatId);
-    if (loadedMessages.length === 0 && loadedReport?.assignedOfficerName) {
-      // Add initial officer greeting if chat is new and messages are empty
-      const officerGreetingPayload: Omit<ChatMessage, 'id' | 'timestamp' | 'chatId'> = {
-        sender: 'officer',
-        text: `Hello! I am ${loadedReport.assignedOfficerName}. I'm reviewing your report (ID: ${reportId}). How can I assist you further regarding this matter?`,
-      };
-      // For prototype, add officer greeting directly to local store
-      const greetingMessage = addChatMessage(chatId, officerGreetingPayload);
-      setMessages([greetingMessage]);
-    } else {
-      setMessages(loadedMessages);
+    async function initializeChat() {
+      if (!chatId || !reportId) {
+        // If loadedReport is also essential before any API call, include: !loadedReport
+        console.warn("ChatId or ReportId missing, cannot initialize chat.");
+        setMessages([]); // Clear messages if essential info is missing
+        setIsLoading(false);
+        return;
+      }
+      
+      // Ensure loadedReport is available before proceeding if needed for greeting
+      if (!loadedReport) {
+          console.warn("Report details not loaded yet, deferring chat initialization for greeting check.");
+          setIsLoading(false); // Or handle differently, maybe retry or show specific message
+          return;
+      }
+
+
+      try {
+        const response = await fetch(`/api/chat/${chatId}/messages`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch messages: ${response.statusText}`);
+        }
+        let apiMessages: ChatMessage[] = await response.json();
+
+        if (apiMessages.length === 0 && loadedReport.assignedOfficerName) {
+          // Chat is new and no messages from API, create and POST officer greeting
+          const greetingPayload = {
+            sender: 'officer' as 'officer',
+            text: `Hello! I am ${loadedReport.assignedOfficerName}. I'm reviewing your report (ID: ${reportId}). How can I assist you further regarding this matter?`,
+          };
+
+          const greetingPostResponse = await fetch(`/api/chat/${chatId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(greetingPayload),
+          });
+
+          if (!greetingPostResponse.ok) {
+            const errorData = await greetingPostResponse.json();
+            throw new Error(errorData.error || `Failed to post initial officer greeting: ${greetingPostResponse.statusText}`);
+          }
+          const serverGeneratedGreeting: ChatMessage = await greetingPostResponse.json();
+          apiMessages = [serverGeneratedGreeting]; // Start with the greeting from server
+          // Also save this server-confirmed greeting to localStorage
+          addChatMessage(chatId, serverGeneratedGreeting);
+        }
+        
+        setMessages(apiMessages);
+
+      } catch (error) {
+        console.error("Failed to load/initialize chat:", error);
+        toast({
+          title: "Chat Error",
+          description: (error instanceof Error ? error.message : "Could not load or initialize chat history. Please try again."),
+          variant: "destructive",
+        });
+        setMessages([]); // Show empty on error
+      } finally {
+        setIsLoading(false);
+      }
     }
-    setIsLoading(false);
-  }, [chatId, reportId]);
+
+    initializeChat();
+
+  }, [chatId, reportId, toast]);
+
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -59,7 +110,7 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
 
     const messagePayload = {
       text: newMessageText.trim(),
-      sender: 'user' as 'user', // Explicitly type sender
+      sender: 'user' as 'user',
     };
 
     try {
@@ -78,14 +129,7 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
 
       const serverResponseMessage: ChatMessage = await response.json();
       
-      // Add the server-confirmed message to localStorage for persistence in prototype
-      addChatMessage(chatId, {
-        id: serverResponseMessage.id, // Use server ID
-        chatId: serverResponseMessage.chatId,
-        sender: serverResponseMessage.sender,
-        text: serverResponseMessage.text,
-        timestamp: serverResponseMessage.timestamp, // Use server timestamp
-      });
+      addChatMessage(chatId, serverResponseMessage); // Persist server-confirmed message to localStorage
 
       setMessages((prevMessages) => [...prevMessages, serverResponseMessage]);
       setNewMessageText('');
@@ -93,7 +137,7 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
     } catch (error) {
       console.error('Error sending message:', error);
       toast({
-        title: 'Error',
+        title: 'Error Sending Message',
         description: (error instanceof Error ? error.message : 'Could not send message. Please try again.'),
         variant: 'destructive',
       });
@@ -107,7 +151,11 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
   }
 
   if (!report) {
-    return <div className="text-center text-destructive">Report details not found. Cannot initiate chat.</div>;
+    return (
+      <div className="flex flex-1 justify-center items-center text-destructive p-4 text-center">
+        Report details not found. Cannot initiate chat. This might happen if the report ID is invalid or not yet processed.
+      </div>
+    );
   }
   
   const officerName = report.assignedOfficerName || 'Assigned Officer';
@@ -121,7 +169,7 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
         </CardTitle>
          <p className="text-xs text-muted-foreground flex items-center mt-1">
           <AlertTriangle className="h-3 w-3 mr-1 text-yellow-500" />
-          Prototype chat: Messages are sent to a mock backend and stored locally. Not encrypted.
+          Prototype chat: Messages sent to a mock backend (in-memory) & stored locally. Not encrypted.
         </p>
       </CardHeader>
       <ScrollArea className="flex-1 p-4">
@@ -181,3 +229,4 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
     </Card>
   );
 }
+
