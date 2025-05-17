@@ -15,17 +15,19 @@ export const getChatMessages = (chatId: string): ChatMessage[] => {
   }
 };
 
+// This function now primarily serves to persist messages to localStorage for the prototype.
+// The message object passed to it might already have server-generated id and timestamp.
 export const addChatMessage = (
   chatId: string,
-  messageData: Omit<ChatMessage, 'id' | 'timestamp' | 'chatId'>
+  messageData: Omit<ChatMessage, 'chatId'> & { chatId?: string } // Allow full ChatMessage to be passed
 ): ChatMessage => {
   if (typeof window === 'undefined') {
-    // Return a mock message or throw error for server-side, though this should primarily be client-side
     const mockMessage: ChatMessage = {
-      ...messageData,
-      id: `server-mock-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      chatId,
+      id: messageData.id || `server-mock-${Date.now()}`,
+      timestamp: messageData.timestamp || new Date().toISOString(),
+      sender: messageData.sender,
+      text: messageData.text,
+      chatId: chatId, // Ensure chatId is set correctly
     };
     console.warn("addChatMessage called in non-browser environment, returning mock message for chatId:", chatId);
     return mockMessage;
@@ -33,23 +35,35 @@ export const addChatMessage = (
   
   try {
     const messages = getChatMessages(chatId);
+    
+    // If a full ChatMessage object (potentially from server) is passed, use its properties.
+    // Otherwise, generate id and timestamp if they are missing.
     const newMessage: ChatMessage = {
-      ...messageData,
-      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      timestamp: new Date().toISOString(),
-      chatId,
+      id: messageData.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      chatId: chatId, // Always use the provided chatId for storage key consistency
+      sender: messageData.sender,
+      text: messageData.text,
+      timestamp: messageData.timestamp || new Date().toISOString(),
     };
-    messages.push(newMessage);
+
+    // Avoid duplicates if message with same ID already exists (e.g. from server + local echo)
+    const existingMessageIndex = messages.findIndex(m => m.id === newMessage.id);
+    if (existingMessageIndex > -1) {
+      messages[existingMessageIndex] = newMessage; // Update if exists
+    } else {
+      messages.push(newMessage);
+    }
+    
     localStorage.setItem(getChatStorageKey(chatId), JSON.stringify(messages));
     return newMessage;
   } catch (error) {
     console.error(`Error saving chat message for ${chatId} to localStorage:`, error);
-    // Fallback or re-throw, here we'll return the message without saving if storage fails
-     const fallbackMessage: ChatMessage = {
-      ...messageData,
-      id: `error-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      chatId,
+    const fallbackMessage: ChatMessage = {
+      id: messageData.id || `error-${Date.now()}`,
+      chatId: chatId,
+      sender: messageData.sender,
+      text: messageData.text,
+      timestamp: messageData.timestamp || new Date().toISOString(),
     };
     return fallbackMessage;
   }
