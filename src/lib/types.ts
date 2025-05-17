@@ -1,3 +1,4 @@
+
 export enum ReportType {
   HACKING = 'Hacking',
   ONLINE_FRAUD = 'Online Fraud',
@@ -58,4 +59,14 @@ export interface Report {
   submissionDate: string; // ISO string
   status: ReportStatus;
   aiTriage?: AIAssistedTriageResult;
+  assignedOfficerName?: string;
+  chatId?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  chatId: string;
+  sender: 'user' | 'officer';
+  text: string;
+  timestamp: string; // ISO string
 }

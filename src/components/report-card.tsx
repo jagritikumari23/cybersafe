@@ -1,11 +1,14 @@
+
 'use client';
 
 import type { Report } from '@/lib/types';
 import { ReportStatus, ReportType } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, CheckCircle2, Clock, FileText, Fingerprint, Fish, Landmark, MessagesSquare, Smile, Terminal, User, AlertTriangle, Bot } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, FileText, Fingerprint, Fish, Landmark, MessagesSquare, Smile, Terminal, User, Bot, MessageSquare as ChatIcon } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import Link from 'next/link';
 
 interface ReportCardProps {
   report: Report;
@@ -34,7 +37,7 @@ const getReportTypeIcon = (type: ReportType) => {
     case ReportType.ONLINE_FRAUD: return <Landmark className={className} />;
     case ReportType.IDENTITY_THEFT: return <Fingerprint className={className} />;
     case ReportType.CYBERBULLYING: return <MessagesSquare className={className} />;
-    case ReportType.SEXTORTION: return <Smile className={className} />; // Using Smile as CameraOff might be too direct
+    case ReportType.SEXTORTION: return <Smile className={className} />; 
     case ReportType.PHISHING: return <Fish className={className} />;
     default: return <AlertCircle className={className} />;
   }
@@ -44,7 +47,7 @@ const getUrgencyBadgeVariant = (urgency?: string): "default" | "destructive" | "
     if (!urgency) return "outline";
     switch (urgency.toLowerCase()) {
         case 'high': return 'destructive';
-        case 'medium': return 'default'; // Using primary color for medium
+        case 'medium': return 'default'; 
         case 'low': return 'secondary';
         default: return 'outline';
     }
@@ -116,6 +119,17 @@ export default function ReportCard({ report }: ReportCardProps) {
             <div>
                 <h4 className="text-sm font-semibold text-muted-foreground">Reporter</h4>
                 <p className="text-sm flex items-center"><User className="h-4 w-4 mr-1 text-muted-foreground"/> {report.reporterName} {report.reporterContact && `(${report.reporterContact})`}</p>
+            </div>
+        )}
+        
+        {report.status === ReportStatus.OFFICER_ASSIGNED && report.chatId && report.assignedOfficerName && (
+            <div className="mt-4">
+                 <Button asChild variant="outline" className="w-full border-primary text-primary hover:bg-primary/10 hover:text-primary">
+                    <Link href={`/chat/${report.chatId}?reportId=${report.id}`}>
+                        <ChatIcon className="mr-2 h-4 w-4" />
+                        Chat with {report.assignedOfficerName}
+                    </Link>
+                 </Button>
             </div>
         )}
 

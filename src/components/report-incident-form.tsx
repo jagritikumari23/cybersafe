@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -36,9 +37,11 @@ import { cn } from '@/lib/utils';
 import { format } from "date-fns"
 import { useToast } from '@/hooks/use-toast';
 import { ReportType, type EvidenceFile, ReportStatus, type Report, AITriageCategory, AITriageUrgency } from '@/lib/types';
-import { addReportToStorage, updateReportInStorage } from '@/lib/report-store'; // Changed: Using updateReportInStorage
+import { addReportToStorage, updateReportInStorage } from '@/lib/report-store';
 import { autoTriage, type AutoTriageInput } from '@/ai/flows/auto-triage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { addChatMessage } from '@/lib/chat-store';
+
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'application/pdf', 'text/plain', 'video/mp4', 'video/quicktime'];
@@ -66,8 +69,8 @@ export default function ReportIncidentForm() {
     resolver: zodResolver(reportSchema),
     defaultValues: {
       description: '',
-      reporterName: '', // Ensure controlled component from start
-      reporterContact: '', // Ensure controlled component from start
+      reporterName: '',
+      reporterContact: '',
       evidenceFiles: [],
     },
   });
@@ -81,7 +84,6 @@ export default function ReportIncidentForm() {
 
       if (currentFilesCount + newFilesCount > 5) {
         toast({ title: "File Limit Exceeded", description: `You can upload a maximum of 5 files. You have selected ${currentFilesCount} and tried to add ${newFilesCount}.`, variant: "destructive" });
-        // Clear the file input
         event.target.value = '';
         return;
       }
@@ -92,12 +94,12 @@ export default function ReportIncidentForm() {
       for (const file of filesArray) {
         if (file.size > MAX_FILE_SIZE) {
           toast({ title: "File Too Large", description: `${file.name} exceeds 5MB.`, variant: "destructive" });
-          event.target.value = ''; // Clear the file input
+          event.target.value = ''; 
           return;
         }
         if (!ALLOWED_FILE_TYPES.includes(file.type)) {
           toast({ title: "Invalid File Type", description: `${file.name} has an unsupported file type.`, variant: "destructive" });
-          event.target.value = ''; // Clear the file input
+          event.target.value = ''; 
           return;
         }
         newEvidenceFiles.push({
@@ -110,7 +112,6 @@ export default function ReportIncidentForm() {
 
       setSelectedFiles(prev => [...prev, ...newEvidenceFiles]);
       form.setValue('evidenceFiles', [...(form.getValues('evidenceFiles') || []), ...newFormFiles] as any);
-       // Clear the file input so the same file can be re-added if removed
       event.target.value = '';
     }
   };
@@ -124,20 +125,21 @@ export default function ReportIncidentForm() {
   async function onSubmit(data: ReportFormValues) {
     setIsSubmitting(true);
     const reportId = `CS-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    let completeReport: Report;
+
     try {
       
-      const newReportBase: Omit<Report, 'aiTriage' | 'status'> = {
+      const newReportBase: Omit<Report, 'aiTriage' | 'status' | 'assignedOfficerName' | 'chatId'> = {
         id: reportId,
         type: data.type,
         description: data.description,
         incidentDate: data.incidentDate.toISOString(),
         reporterName: data.reporterName,
         reporterContact: data.reporterContact,
-        evidenceFiles: selectedFiles, // Use state variable that tracks EvidenceFile[]
+        evidenceFiles: selectedFiles,
         submissionDate: new Date().toISOString(),
       };
       
-      // Store report first with pending AI status
       const pendingReport: Report = {
         ...newReportBase,
         status: ReportStatus.AI_TRIAGE_PENDING,
@@ -145,24 +147,38 @@ export default function ReportIncidentForm() {
       addReportToStorage(pendingReport);
       toast({ title: 'Report Submitted', description: `Your report ID is ${reportId}. AI Triage is in progress.` });
 
-      // Perform AI Triage
       const triageInput: AutoTriageInput = {
         reportText: `Type: ${data.type}\nDescription: ${data.description}${data.reporterName ? `\nReporter: ${data.reporterName}`: ''}`,
       };
       const triageResult = await autoTriage(triageInput);
       
-      const completeReport: Report = {
+      let assignedOfficerName: string | undefined = undefined;
+      let chatId: string | undefined = undefined;
+      let finalStatus = ReportStatus.AI_TRIAGE_COMPLETED;
+
+      if (triageResult.urgency === AITriageUrgency.HIGH || triageResult.urgency === AITriageUrgency.MEDIUM) {
+        assignedOfficerName = "Officer K";
+        chatId = `chat_${reportId}`;
+        finalStatus = ReportStatus.OFFICER_ASSIGNED;
+      }
+      
+      completeReport = {
         ...newReportBase,
         aiTriage: {
             category: triageResult.category as AITriageCategory | string,
             urgency: triageResult.urgency as AITriageUrgency | string,
             summary: triageResult.summary,
         },
-        status: ReportStatus.AI_TRIAGE_COMPLETED,
+        status: finalStatus,
+        assignedOfficerName: assignedOfficerName,
+        chatId: chatId,
       };
 
-      updateReportInStorage(completeReport); // Update report with AI triage results
-      toast({ title: 'AI Triage Completed', description: `Report ${reportId} has been analyzed.`, variant: "default" });
+      updateReportInStorage(completeReport); 
+      const triageToastMessage = finalStatus === ReportStatus.OFFICER_ASSIGNED 
+        ? `Report ${reportId} analyzed. Officer K assigned. You can now chat.`
+        : `Report ${reportId} has been analyzed.`;
+      toast({ title: 'AI Triage Completed', description: triageToastMessage, variant: "default" });
       
       form.reset();
       setSelectedFiles([]);
@@ -179,7 +195,7 @@ export default function ReportIncidentForm() {
         reporterContact: data.reporterContact,
         evidenceFiles: selectedFiles,
         submissionDate: new Date().toISOString(),
-        status: ReportStatus.FILED, // Mark as filed, AI triage failed
+        status: ReportStatus.FILED, 
          aiTriage: {
           category: "Error",
           urgency: "N/A",
@@ -192,7 +208,7 @@ export default function ReportIncidentForm() {
         description: 'AI triage failed. Report submitted with basic details. Please try again later or contact support.',
         variant: 'destructive',
       });
-      router.push(`/track-report?id=${reportId}`); // Still redirect so user can see it
+      router.push(`/track-report?id=${reportId}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -298,7 +314,7 @@ export default function ReportIncidentForm() {
             <FormField
               control={form.control}
               name="evidenceFiles"
-              render={({ field }) => ( // field is not directly used for input's value/onChange here
+              render={({ field }) => ( 
                 <FormItem>
                   <FormLabel>Upload Evidence (Screenshots, Documents, etc.)</FormLabel>
                   <FormControl>
@@ -313,9 +329,9 @@ export default function ReportIncidentForm() {
                         multiple
                         className="hidden"
                         id="evidence-upload"
-                        onChange={handleFileChange} // Custom handler
+                        onChange={handleFileChange} 
                         accept={ALLOWED_FILE_TYPES.join(',')}
-                        value="" // Keep input uncontrolled for file type by react-hook-form's standard
+                        value="" 
                       />
                        <label htmlFor="evidence-upload" className="mt-2 text-sm font-medium text-primary hover:text-primary/80 cursor-pointer">
                         Browse files
@@ -392,5 +408,3 @@ export default function ReportIncidentForm() {
     </Card>
   );
 }
-
-    
