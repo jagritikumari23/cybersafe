@@ -8,3 +8,4 @@ import '@/ai/flows/suggest-escalation-flow.ts';
 import '@/ai/flows/translate-text-flow.ts';
 import '@/ai/flows/cyber-risk-score-flow.ts';
 import '@/ai/flows/detect-fraud-patterns-flow.ts';
+import '@/ai/flows/speech-to-text-flow.ts'; // Added new placeholder flow
