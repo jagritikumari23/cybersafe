@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -10,13 +11,14 @@ import {
   SidebarContent,
   SidebarFooter,
 } from '@/components/ui/sidebar';
-import { ShieldCheck, FilePenLine, ListOrdered, LayoutDashboard, ExternalLink } from 'lucide-react';
+import { ShieldCheck, FilePenLine, ListOrdered, LayoutDashboard, ExternalLink, ShieldQuestion } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/report-incident', label: 'Report Incident', icon: FilePenLine },
   { href: '/track-report', label: 'Track Reports', icon: ListOrdered },
+  { href: '/cyber-risk-assessment', label: 'Cyber Risk Check', icon: ShieldQuestion },
 ];
 
 export default function SidebarNav() {

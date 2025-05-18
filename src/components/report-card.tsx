@@ -1,17 +1,19 @@
 
 'use client';
 
-import type { Report, SuspectDetails, IncidentLocation } from '@/lib/types';
+import type { Report, SuspectDetails, IncidentLocation, FraudPatternInfo } from '@/lib/types';
 import { ReportStatus, ReportType, EscalationTarget } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
     AlertCircle, CheckCircle2, Clock, FileText, Fingerprint, Fish, Landmark, MessagesSquare, Smile, Terminal, User, Bot, 
-    MessageSquare as ChatIcon, Waypoints, Info, Building, Globe, ShieldAlert, AlertTriangle, UserCheck, UserCog, SearchCheck, Microscope, CaseUpper, Languages, ExternalLink, PlayCircle
+    MessageSquare as ChatIcon, Waypoints, Info, Building, Globe, ShieldAlert, AlertTriangle, UserCheck, UserCog, SearchCheck, Microscope, CaseUpper, Languages, ExternalLink, PlayCircle, SearchSlash, WifiOff, BarChartHorizontalBig
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+
 
 interface ReportCardProps {
   report: Report;
@@ -28,9 +30,11 @@ const getStatusIcon = (status: ReportStatus) => {
       return <Languages className={`${iconClass} text-purple-400`} />;
     case ReportStatus.AI_TRIAGE_PENDING:
     case ReportStatus.ESCALATION_SUGGESTION_PENDING:
+    case ReportStatus.FRAUD_PATTERN_ANALYSIS_PENDING:
       return <Clock className={`${iconClass} text-yellow-500`} />;
     case ReportStatus.AI_TRIAGE_COMPLETED:
     case ReportStatus.ESCALATION_SUGGESTION_COMPLETED:
+    case ReportStatus.FRAUD_PATTERN_ANALYSIS_COMPLETED:
       return <SearchCheck className={`${iconClass} text-blue-400`} />;
     case ReportStatus.CASE_ACCEPTED:
       return <UserCheck className={`${iconClass} text-indigo-500`} />;
@@ -95,7 +99,7 @@ const renderSuspectDetails = (suspects?: SuspectDetails) => {
                 {suspects.phone && <li>Phone: {suspects.phone}</li>}
                 {suspects.email && <li>Email: {suspects.email}</li>}
                 {suspects.ipAddress && <li>IP Address: {suspects.ipAddress}</li>}
-                {suspects.website && <li>Website: <a href={suspects.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{suspects.website} <ExternalLink className="inline h-3 w-3"/></a></li>}
+                {suspects.website && <li>Website: <a href={suspects.website.startsWith('http') ? suspects.website : `http://${suspects.website}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{suspects.website} <ExternalLink className="inline h-3 w-3"/></a></li>}
                 {suspects.bankAccount && <li>Bank Account: {suspects.bankAccount}</li>}
                 {suspects.otherInfo && <li>Other: {suspects.otherInfo}</li>}
             </ul>
@@ -104,21 +108,37 @@ const renderSuspectDetails = (suspects?: SuspectDetails) => {
 };
 
 const renderLocationDetails = (location?: IncidentLocation) => {
-    if (!location || location.type === 'not_provided') return null;
-    let displayLocation = location.details || '';
-    if (location.type === 'manual' && !displayLocation) {
-        displayLocation = [location.city, location.state, location.country].filter(Boolean).join(', ');
-    }
-    if (!displayLocation) return null;
-
+    if (!location || location.type === 'not_provided' || !location.details) return null;
+    
     return (
         <div>
             <h4 className="text-sm font-semibold text-muted-foreground mt-3 mb-1">Incident Location</h4>
             <p className="text-sm text-foreground/80">
-                {displayLocation}
+                {location.details}
                 {location.type === 'auto' && <span className="text-xs text-muted-foreground ml-1">(Auto-detected)</span>}
             </p>
         </div>
+    );
+};
+
+const renderFraudPatternInfo = (fraudPattern?: FraudPatternInfo) => {
+    if (!fraudPattern) return null;
+
+    const variant = fraudPattern.detected ? "destructive" : "default";
+    const Icon = fraudPattern.detected ? AlertTriangle : SearchSlash;
+    const title = fraudPattern.detected ? "Potential Fraud Pattern Detected!" : "Fraud Pattern Analysis";
+
+    return (
+        <Alert variant={variant} className="mt-3 bg-opacity-10">
+            <Icon className={`h-4 w-4 ${fraudPattern.detected ? 'text-destructive' : 'text-primary'}`} />
+            <AlertTitle className={`font-semibold ${fraudPattern.detected ? 'text-destructive' : 'text-primary'}`}>{title}</AlertTitle>
+            <AlertDescription>
+                {fraudPattern.details}
+                {fraudPattern.detected && fraudPattern.confidence && (
+                    <span className="block text-xs mt-1">Confidence: <Badge variant={fraudPattern.confidence === 'High' ? 'destructive' : fraudPattern.confidence === 'Medium' ? 'default': 'secondary'} size="sm">{fraudPattern.confidence}</Badge></span>
+                )}
+            </AlertDescription>
+        </Alert>
     );
 };
 
@@ -192,11 +212,13 @@ export default function ReportCard({ report }: ReportCardProps) {
             <p className="text-xs text-muted-foreground italic"><span className="font-medium">Reasoning: </span>{report.aiEscalation.reasoning}</p>
           </div>
         )}
+
+        {renderFraudPatternInfo(report.fraudPatternInfo)}
         
         {report.timelineNotes && (
             <div className="p-3 bg-blue-500/10 rounded-md border border-blue-500/30 mt-2">
                  <h4 className="text-sm font-semibold flex items-center text-blue-700 dark:text-blue-300 mb-1">
-                    <CaseUpper className="h-4 w-4 mr-2" /> Current Status & Next Steps
+                    <CaseUpper className="h-4 w-4 mr-2" /> Current Status &amp; Next Steps
                 </h4>
                 <p className="text-xs text-blue-700/90 dark:text-blue-300/90">{report.timelineNotes}</p>
             </div>

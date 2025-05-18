@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import EmergencyAlertButton from '@/components/emergency-alert-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { FilePenLine, ListOrdered, ShieldAlert, Info, PlayCircle, Languages } from 'lucide-react';
+import { FilePenLine, ListOrdered, ShieldAlert, Info, PlayCircle, Languages, ShieldQuestion, BarChart3, Map } from 'lucide-react';
 import Image from 'next/image';
 
 export default function HomePage() {
@@ -24,11 +24,11 @@ export default function HomePage() {
         </p>
       </section>
 
-      <section className="grid md:grid-cols-2 gap-8 mb-12 items-stretch"> {/* Changed items-center to items-stretch */}
+      <section className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12 items-stretch">
         <Card className="shadow-lg hover:shadow-xl transition-shadow flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center text-2xl"><FilePenLine className="mr-2 h-6 w-6 text-accent" /> Report an Incident</CardTitle>
-            <CardDescription>Experienced a cybercrime? Submit your report through our secure and easy-to-use form.</CardDescription>
+            <CardDescription>Submit your cybercrime report securely and easily.</CardDescription>
           </CardHeader>
           <CardContent className="flex-grow">
             <p className="text-foreground/80 mb-4">
@@ -48,16 +48,33 @@ export default function HomePage() {
         <Card className="shadow-lg hover:shadow-xl transition-shadow flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center text-2xl"><ListOrdered className="mr-2 h-6 w-6 text-primary" /> Track Your Report</CardTitle>
-            <CardDescription>Stay updated on the status of your submitted cybercrime reports in real-time.</CardDescription>
+            <CardDescription>Stay updated on the status of your submitted reports.</CardDescription>
           </CardHeader>
           <CardContent className="flex-grow">
             <p className="text-foreground/80 mb-4">
-              Our system provides transparent updates from case filing to investigation progress and resolution, including AI-powered triage and escalation suggestions.
+              Our system provides transparent updates, including AI-powered triage and escalation suggestions. Chat with assigned officers for high-urgency cases.
             </p>
           </CardContent>
           <CardFooter>
             <Button asChild size="lg" className="w-full">
               <Link href="/track-report">Check Report Status</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+        
+        <Card className="shadow-lg hover:shadow-xl transition-shadow flex flex-col md:col-span-2 lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center text-2xl"><ShieldQuestion className="mr-2 h-6 w-6 text-green-500" /> Cyber Risk Check</CardTitle>
+            <CardDescription>Assess your personal cybersecurity risk level.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-grow">
+            <p className="text-foreground/80 mb-4">
+             Answer a few simple questions to get a personalized cyber risk score and actionable tips to improve your online safety.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild size="lg" className="w-full bg-green-500 text-white hover:bg-green-600">
+              <Link href="/cyber-risk-assessment">Take Assessment</Link>
             </Button>
           </CardFooter>
         </Card>
@@ -78,13 +95,58 @@ export default function HomePage() {
             <CardTitle className="flex items-center text-2xl"><Info className="mr-2 h-6 w-6 text-primary" /> How CyberSafe Works</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-foreground/80">
-            <p><strong>1. Report:</strong> Fill out a simple form detailing the cybercrime incident (supports multiple languages for description), and upload any supporting evidence.</p>
-            <p><strong>2. AI Analysis:</strong> Your description (if not in English) is translated. Our advanced AI system then automatically categorizes your report, assesses its urgency, and suggests an appropriate escalation path based on Indian cybercrime protocols.</p>
-            <p><strong>3. Track:</strong> Monitor the real-time status of your report through your dashboard as it moves through investigation stages.</p>
-            <p><strong>4. Chat (if applicable):</strong> If an officer is assigned (typically for medium/high urgency cases), you can chat with them directly for updates.</p>
-            <p><strong>5. Stay Safe:</strong> Access resources and tips to protect yourself from future cyber threats.</p>
+            <p><strong>1. Report:</strong> Fill out a simple form detailing the incident (supports multiple languages), upload evidence, and provide suspect/location info if known.</p>
+            <p><strong>2. AI Analysis:</strong> Your report is translated (if needed), triaged for urgency/category, checked for known fraud patterns, and an escalation path is suggested.</p>
+            <p><strong>3. Track & Engage:</strong> Monitor status via your dashboard. For urgent cases, chat with an assigned officer. All reports get timeline notes for clarity.</p>
+            <p><strong>4. Stay Safe:</strong> Use our Cyber Risk Check tool and access resources like guided tutorials to enhance your digital safety.</p>
           </CardContent>
         </Card>
+      </section>
+
+      <section className="my-16">
+        <h2 className="text-3xl font-bold text-center mb-8 text-primary">Cybercrime Trends &amp; Heatmap (Coming Soon)</h2>
+        <div className="grid md:grid-cols-3 gap-6 mb-8">
+            <Card className="md:col-span-2 shadow-lg">
+                <CardHeader>
+                    <CardTitle className="flex items-center text-xl"><Map className="mr-2 h-5 w-5 text-blue-500"/>Regional Cybercrime Heatmap</CardTitle>
+                    <CardDescription>Visualizing reported incidents across different areas.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Image 
+                        src="https://placehold.co/800x400.png?text=Heatmap+Data+Placeholder" 
+                        alt="Placeholder for cybercrime heatmap" 
+                        width={800} 
+                        height={400} 
+                        className="rounded-md shadow-md mx-auto aspect-video object-cover"
+                        data-ai-hint="map data visualization"
+                    />
+                    <p className="text-sm text-muted-foreground mt-2 text-center">This is a placeholder. A real heatmap would show crime hotspots.</p>
+                </CardContent>
+            </Card>
+            <div className="space-y-4">
+                 <Card className="shadow-lg">
+                    <CardHeader>
+                        <CardTitle className="flex items-center text-lg"><BarChart3 className="mr-2 h-5 w-5 text-yellow-500"/>Weekly Trend</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="font-semibold">Spike in SIM Swap Scams in [State/Region]</p>
+                        <p className="text-xs text-muted-foreground">Reports indicate a 25% increase this week.</p>
+                        <Button variant="link" size="sm" className="px-0 h-auto mt-1" disabled>Learn More (Soon)</Button>
+                    </CardContent>
+                </Card>
+                 <Card className="shadow-lg">
+                    <CardHeader>
+                        <CardTitle className="flex items-center text-lg"><BarChart3 className="mr-2 h-5 w-5 text-red-500"/>Emerging Threat</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="font-semibold">AI Voice Cloning for Extortion</p>
+                        <p className="text-xs text-muted-foreground">Early reports of scams using AI-generated voice.</p>
+                         <Button variant="link" size="sm" className="px-0 h-auto mt-1" disabled>Read Advisory (Soon)</Button>
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
+         <p className="text-center text-muted-foreground">Real-time trend analysis and interactive heatmaps are planned for future updates.</p>
       </section>
 
       <section className="my-16">
@@ -111,7 +173,6 @@ export default function HomePage() {
                 <CardDescription>Language: {video.lang}</CardDescription>
               </CardContent>
               <CardFooter>
-                 {/* In a real app, this button would link to the video or a modal */}
                 <Button variant="outline" className="w-full" disabled>Watch Tutorial (Coming Soon)</Button>
               </CardFooter>
             </Card>

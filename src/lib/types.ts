@@ -15,6 +15,7 @@ export enum AITriageCategory {
   CYBERBULLYING = 'Cyberbullying',
   HACKING = 'Hacking',
   IDENTITY_THEFT = 'Identity Theft',
+  PHISHING = 'Phishing',
   OTHER = 'Other',
 }
 
@@ -26,12 +27,14 @@ export enum AITriageUrgency {
 
 export enum ReportStatus {
   FILED = 'Filed', // Initial submission before any processing
+  TRANSLATION_PENDING = 'Translation Pending',
+  TRANSLATION_COMPLETED = 'Translation Completed',
   AI_TRIAGE_PENDING = 'AI Triage Pending',
   AI_TRIAGE_COMPLETED = 'AI Triage Completed',
   ESCALATION_SUGGESTION_PENDING = 'Escalation Suggestion Pending',
-  ESCALATION_SUGGESTION_COMPLETED = 'Escalation Suggestion Completed', // AI part done
-  TRANSLATION_PENDING = 'Translation Pending',
-  TRANSLATION_COMPLETED = 'Translation Completed',
+  ESCALATION_SUGGESTION_COMPLETED = 'Escalation Suggestion Completed',
+  FRAUD_PATTERN_ANALYSIS_PENDING = 'Fraud Pattern Analysis Pending',
+  FRAUD_PATTERN_ANALYSIS_COMPLETED = 'Fraud Pattern Analysis Completed', // AI part done
   CASE_ACCEPTED = 'Case Accepted for Review', // Formal acceptance post-AI
   OFFICER_ASSIGNED = 'Investigating Officer Assigned',
   INVESTIGATION_INITIATED = 'Investigation Initiated',
@@ -89,6 +92,12 @@ export interface IncidentLocation {
   longitude?: number;
 }
 
+export interface FraudPatternInfo {
+  detected: boolean;
+  details: string;
+  confidence?: 'High' | 'Medium' | 'Low'; // Optional confidence level
+}
+
 export interface Report {
   id: string; 
   type: ReportType;
@@ -110,6 +119,7 @@ export interface Report {
   
   aiTriage?: AIAssistedTriageResult;
   aiEscalation?: AISuggestedEscalationResult;
+  fraudPatternInfo?: FraudPatternInfo;
   
   assignedOfficerName?: string;
   chatId?: string;
@@ -136,3 +146,23 @@ export const ComplaintLanguages = [
   // Add more languages as needed for the simulation
 ];
 export type ComplaintLanguageCode = typeof ComplaintLanguages[number]['value'];
+
+// For Cyber Risk Assessment
+export interface CyberRiskQuestion {
+  id: string;
+  text: string;
+  options: { value: string; label: string }[];
+  answerType: 'radio' | 'select'; // Could be expanded
+  pointsMapping?: Record<string, number>; // How answers map to risk points for this question
+}
+
+export interface CyberRiskAssessmentAnswers {
+  [questionId: string]: string; // e.g. { q1_passwords: "yes", q2_2fa: "no" }
+}
+
+export interface CyberRiskResult {
+  score: number; // e.g., 0-100
+  level: 'Low' | 'Medium' | 'High' | 'Very High';
+  recommendations: string[];
+  summaryMessage: string;
+}

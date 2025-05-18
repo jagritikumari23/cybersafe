@@ -35,11 +35,12 @@ import { AlertTriangle, CalendarIcon, FileText, Globe, Info, Languages, Loader2,
 import { cn } from '@/lib/utils';
 import { format } from "date-fns"
 import { useToast } from '@/hooks/use-toast';
-import { ReportType, type EvidenceFile, ReportStatus, type Report, AITriageCategory, AITriageUrgency, EscalationTarget, type SuspectDetails, type IncidentLocation, ComplaintLanguages, type ComplaintLanguageCode } from '@/lib/types';
-import { addReportToStorage, updateReportInStorage } from '@/lib/report-store';
+import { ReportType, type EvidenceFile, ReportStatus, type Report, AITriageCategory, AITriageUrgency, EscalationTarget, type SuspectDetails, type IncidentLocation, ComplaintLanguages, type ComplaintLanguageCode, type FraudPatternInfo } from '@/lib/types';
+import { addReportToStorage, updateReportInStorage, getReportsFromStorage } from '@/lib/report-store';
 import { autoTriage, type AutoTriageInput } from '@/ai/flows/auto-triage';
 import { suggestEscalation, type SuggestEscalationInput } from '@/ai/flows/suggest-escalation-flow';
 import { translateText, type TranslateTextInput } from '@/ai/flows/translate-text-flow';
+import { detectFraudPatterns, type DetectFraudPatternsInput } from '@/ai/flows/detect-fraud-patterns-flow';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -83,6 +84,17 @@ function generateStructuredId(city?: string, state?: string): string {
   const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
   return `${stateAbbr}-${cityAbbr}-${year}-${randomSuffix}`;
 }
+
+// Simulated known fraudulent indicators for prototype
+const KNOWN_FRAUD_INDICATORS_TEXT = `
+Known scammer emails: danger@scamdomain.com, phisher@fakebank.org, urgent@verify-account.net
+Known scam phone numbers: +911234500000, +18005551001
+Suspicious IP addresses: 10.0.0.1 (internal, likely a mistake if reported), 203.0.113.45
+Flagged bank accounts: 12345678900 (Generic Bank), 98765432100 (Another Bank)
+Website patterns: sites ending in .xyz, .top, .live that ask for credentials; sites impersonating official government portals with slight misspellings.
+Other suspicious info: "Received SMS asking to click link to update KYC", "Job offer asking for upfront payment via UPI to unofficial ID"
+`;
+
 
 export default function ReportIncidentForm() {
   const router = useRouter();
@@ -205,7 +217,7 @@ export default function ReportIncidentForm() {
         city: data.manualLocationCity,
         state: data.manualLocationState,
         country: data.manualLocationCountry,
-        details: `${data.manualLocationCity || ''}, ${data.manualLocationState || ''}, ${data.manualLocationCountry || ''}`.replace(/^, |, $/g, '').replace(/, ,/g,',').trim(),
+        details: [data.manualLocationCity, data.manualLocationState, data.manualLocationCountry].filter(Boolean).join(', ') || 'Manual location entry',
       };
     } else {
       incidentLocationData = { type: 'not_provided' };
@@ -232,7 +244,7 @@ export default function ReportIncidentForm() {
       incidentDate: data.incidentDate.toISOString(),
       reporterName: data.reporterName,
       reporterContact: data.reporterContact,
-      suspectDetails: Object.values(suspectDetails).some(val => val && String(val).length > 0) ? suspectDetails : undefined,
+      suspectDetails: Object.values(suspectDetails).some(val => val && String(val).trim().length > 0) ? suspectDetails : undefined,
       incidentLocation: incidentLocationData.type !== 'not_provided' && (incidentLocationData.details || incidentLocationData.city) ? incidentLocationData : undefined,
       additionalEvidenceText: data.additionalEvidenceText,
       evidenceFiles: selectedFiles,
@@ -270,14 +282,14 @@ export default function ReportIncidentForm() {
 
       // AI Triage
       currentReport.status = ReportStatus.AI_TRIAGE_PENDING;
-      currentReport.timelineNotes = currentReport.timelineNotes || "Report submitted. AI Triage in progress..."; // Keep previous note if translation happened
+      currentReport.timelineNotes = currentReport.timelineNotes || "Report submitted. AI Triage in progress...";
       if (data.originalDescriptionLanguage === 'en' || selectedLanguageLabel === 'English') currentReport.timelineNotes = "Report submitted. AI Triage in progress...";
       updateReportInStorage(currentReport);
       toast({ title: 'Processing...', description: `Report ${reportId}: AI Triage is in progress.`, duration: 2000 });
 
       const triageInput: AutoTriageInput = {
-        reportText: descriptionForAI, // Use potentially translated description
-        reportType: data.type, // Pass report type to triage
+        reportText: descriptionForAI,
+        reportType: data.type,
       };
       const triageResult = await autoTriage(triageInput);
       
@@ -308,14 +320,13 @@ export default function ReportIncidentForm() {
       if (currentReport.incidentLocation && currentReport.incidentLocation.type !== 'not_provided') {
         if (currentReport.incidentLocation.type === 'auto' && currentReport.incidentLocation.details) {
             locationInfoForAI = `Incident location (auto-detected): ${currentReport.incidentLocation.details}.`;
-        } else if (currentReport.incidentLocation.type === 'manual') {
-            locationInfoForAI = `Incident location (manual entry): City: ${currentReport.incidentLocation.city || 'N/A'}, State: ${currentReport.incidentLocation.state || 'N/A'}, Country: ${currentReport.incidentLocation.country || 'N/A'}.`;
+        } else if (currentReport.incidentLocation.type === 'manual' && currentReport.incidentLocation.details) {
+            locationInfoForAI = `Incident location (manual entry): ${currentReport.incidentLocation.details}.`;
         }
       }
 
-
       const escalationInput: SuggestEscalationInput = {
-        reportText: descriptionForAI, // Use potentially translated description
+        reportText: descriptionForAI, 
         reportType: data.type,
         suspectInfo: suspectInfoForAI,
         locationInfo: locationInfoForAI,
@@ -330,17 +341,46 @@ export default function ReportIncidentForm() {
         reasoning: escalationResult.reasoning,
       };
       currentReport.status = ReportStatus.ESCALATION_SUGGESTION_COMPLETED;
+      currentReport.timelineNotes = `Escalation suggested: ${escalationResult.suggestedTarget}. Analyzing for fraud patterns...`;
+      updateReportInStorage(currentReport);
+      toast({ title: 'Escalation Suggestion Ready', description: `Report ${reportId}: Suggested Escalation - ${escalationResult.suggestedTarget}.`, variant: "default" });
       
+      // Fraud Pattern Detection (Simulated)
+      if (currentReport.suspectDetails && Object.values(currentReport.suspectDetails).some(val => val && String(val).trim().length > 0)) {
+        currentReport.status = ReportStatus.FRAUD_PATTERN_ANALYSIS_PENDING;
+        updateReportInStorage(currentReport);
+        toast({ title: 'Processing...', description: `Report ${reportId}: Checking for known fraud patterns.`, duration: 2000 });
+
+        const fraudPatternInput: DetectFraudPatternsInput = {
+            currentReportSuspectInfo: currentReport.suspectDetails,
+            knownFraudulentIndicatorsText: KNOWN_FRAUD_INDICATORS_TEXT,
+        };
+        const fraudPatternResult = await detectFraudPatterns(fraudPatternInput);
+        currentReport.fraudPatternInfo = fraudPatternResult;
+        currentReport.status = ReportStatus.FRAUD_PATTERN_ANALYSIS_COMPLETED;
+        currentReport.timelineNotes = (currentReport.timelineNotes || "") + ` Fraud Pattern Analysis: ${fraudPatternResult.detected ? `Detected (${fraudPatternResult.details})` : 'No specific patterns detected.'}`;
+        updateReportInStorage(currentReport);
+        if (fraudPatternResult.detected) {
+            toast({ title: 'Fraud Pattern Alert!', description: `Report ${reportId}: Potential link to known fraudulent activity found. Details: ${fraudPatternResult.details}`, variant: 'destructive', duration: 8000 });
+        } else {
+            toast({ title: 'Fraud Pattern Check', description: `Report ${reportId}: No immediate match to known fraud patterns.`, variant: 'default' });
+        }
+      } else {
+         currentReport.fraudPatternInfo = { detected: false, details: "No suspect information provided for pattern analysis." };
+         currentReport.status = ReportStatus.FRAUD_PATTERN_ANALYSIS_COMPLETED; // Still mark as complete
+      }
+      
+      // Final status update
       if (triageResult.urgency === AITriageUrgency.HIGH || triageResult.urgency === AITriageUrgency.MEDIUM) {
         currentReport.assignedOfficerName = "Officer K (System Assigned)"; 
         currentReport.chatId = `chat_${reportId}`;
         currentReport.status = ReportStatus.OFFICER_ASSIGNED;
-        currentReport.timelineNotes = `AI analysis complete. Escalation to ${escalationResult.suggestedTarget} suggested. Officer K assigned. Investigation will commence shortly. You can use the chat feature for updates.`;
-         toast({ title: 'Officer Assigned & Escalation Suggested', description: `Officer K assigned to Report ${reportId}. Suggested Escalation: ${escalationResult.suggestedTarget}.`, variant: "default", duration: 6000 });
+        currentReport.timelineNotes = `AI analysis complete. ${currentReport.fraudPatternInfo?.detected ? 'Fraud pattern detected. ' : ''}Officer K assigned. Investigation will commence shortly. You can use the chat feature for updates.`;
+         toast({ title: 'Officer Assigned', description: `Officer K assigned to Report ${reportId}. ${currentReport.fraudPatternInfo?.detected ? 'Linked to potential fraud pattern. ' : ''}Suggested Escalation: ${escalationResult.suggestedTarget}.`, variant: "default", duration: 6000 });
       } else {
         currentReport.status = ReportStatus.CASE_ACCEPTED; 
-        currentReport.timelineNotes = `AI analysis complete. Escalation to ${escalationResult.suggestedTarget} suggested. Your case has been accepted and will be reviewed by personnel for further action.`;
-        toast({ title: 'Escalation Suggestion Ready', description: `Report ${reportId} processed. Suggested Escalation: ${escalationResult.suggestedTarget}. Case accepted for review.`, variant: "default", duration: 6000 });
+        currentReport.timelineNotes = `AI analysis complete. ${currentReport.fraudPatternInfo?.detected ? 'Fraud pattern detected. ' : ''}Your case has been accepted and will be reviewed for further action. Suggested Escalation: ${escalationResult.suggestedTarget}.`;
+        toast({ title: 'Case Accepted for Review', description: `Report ${reportId} processed. ${currentReport.fraudPatternInfo?.detected ? 'Linked to potential fraud pattern. ' : ''}Suggested Escalation: ${escalationResult.suggestedTarget}.`, variant: "default", duration: 6000 });
       }
 
       if (escalationResult.suggestedTarget !== EscalationTarget.INTERNAL_REVIEW_FURTHER_INFO_NEEDED) {
@@ -364,6 +404,7 @@ export default function ReportIncidentForm() {
       currentReport.status = ReportStatus.FILED; 
       currentReport.aiTriage = currentReport.aiTriage || { category: "Error", urgency: "N/A", summary: "AI Triage failed."};
       currentReport.aiEscalation = currentReport.aiEscalation || { target: EscalationTarget.INTERNAL_REVIEW_FURTHER_INFO_NEEDED, reasoning: "Escalation suggestion failed."};
+      currentReport.fraudPatternInfo = currentReport.fraudPatternInfo || { detected: false, details: "Fraud pattern analysis could not be completed due to an error."};
       currentReport.timelineNotes = "An error occurred during AI analysis. Your report has been filed with basic details. Please check tracking. It will be manually reviewed.";
       updateReportInStorage(currentReport);
       toast({
@@ -549,7 +590,7 @@ export default function ReportIncidentForm() {
                                 <FormField control={form.control} name="manualLocationCity" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="City of incident" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="manualLocationState" render={({ field }) => (<FormItem><FormLabel>State/Province</FormLabel><FormControl><Input placeholder="State/Province" {...field} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
-                            <FormField control={form.control} name="manualLocationCountry" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Country of incident" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="manualLocationCountry" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Country of incident" defaultValue="India" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
                     )}
                 </AccordionContent>
@@ -608,7 +649,7 @@ export default function ReportIncidentForm() {
             </Accordion>
 
             <Button type="submit" className="w-full md:w-auto text-lg py-3 px-6" size="lg" disabled={isSubmitting}>
-              {isSubmitting ? (<><Loader2 className="mr-2 h-5 w-5 animate-spin" />Submitting & Analyzing...</>) : ('Submit Report Securely')}
+              {isSubmitting ? (<><Loader2 className="mr-2 h-5 w-5 animate-spin" />Submitting &amp; Analyzing...</>) : ('Submit Report Securely')}
             </Button>
           </form>
         </Form>
