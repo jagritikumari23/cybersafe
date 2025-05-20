@@ -1,6 +1,14 @@
 // Placeholder for Authentication and User Management Service
 // In a production Next.js app, this might integrate with NextAuth.js, Firebase Authentication,
 // or a custom authentication microservice.
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+} from 'firebase/auth';
+import { app } from '@/lib/firebase/firebase-app'; // Assuming you have a firebase-app.ts file
 
 /**
  * @fileOverview Placeholder for an authentication and user management service.
@@ -16,37 +24,74 @@ export interface User {
 }
 
 export class AuthService {
+  private auth;
+
   constructor() {
     // Initialize connection to auth provider or database
+    this.auth = getAuth(app);
+  }
+
+  async signUp(credentials: any): Promise<User | null> {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(
+        this.auth,
+        credentials.email,
+        credentials.password
+      );
+      // In a real app, you might want to store additional user info (like roles) in a database
+      // and return that information as part of the User object.
+      return {
+        id: userCredential.user.uid,
+        email: userCredential.user.email!,
+        roles: ['user'], // Default role
+      };
+    } catch (error: any) {
+      console.error('[AuthService] Error signing up:', error);
+      throw new Error(error.message); // Re-throw for handling in the UI
+    }
   }
 
   async signIn(credentials: any): Promise<User | null> {
-    // Simulate sign-in
-    console.log('[AuthService Placeholder] signIn called', credentials);
-    // In a real system, verify credentials against a database or auth provider
-    if (credentials.email === 'test@example.com' && credentials.password === 'password') {
-      return { id: 'user-123', email: 'test@example.com', roles: ['user'] };
+    try {
+      const userCredential = await signInWithEmailAndPassword(
+        this.auth,
+        credentials.email,
+        credentials.password
+      );
+      // Again, fetch additional user info (like roles) from a database if needed.
+      return {
+        id: userCredential.user.uid,
+        email: userCredential.user.email!,
+        roles: ['user'], // Fetch actual roles from database
+      };
+    } catch (error: any) {
+      console.error('[AuthService] Error signing in:', error);
+      throw new Error(error.message); // Re-throw for handling in the UI
     }
-    return null;
   }
 
   async signOut(): Promise<void> {
-    // Simulate sign-out
-    console.log('[AuthService Placeholder] signOut called');
-    // In a real system, invalidate session/token
-  }
-
-  async getCurrentUser(token?: string): Promise<User | null> {
-    // Simulate getting current user
-    console.log('[AuthService Placeholder] getCurrentUser called', token);
-    // In a real system, validate token and fetch user details
-    if (token === 'valid-token') {
-      return { id: 'user-123', email: 'test@example.com', roles: ['user'] };
+    try {
+      await firebaseSignOut(this.auth);
+    } catch (error: any) {
+      console.error('[AuthService] Error signing out:', error);
+      throw new Error(error.message);
     }
-    return null;
   }
 
-  // Add other methods like signUp, forgotPassword, updateUserProfile, etc.
+  async getCurrentUser(): Promise<User | null> {
+    return new Promise((resolve) => {
+      const unsubscribe = onAuthStateChanged(this.auth, (user) => {
+        unsubscribe(); // Stop listening after the initial state is received
+        if (user) {
+          // Fetch additional user info (like roles) from a database if needed.
+          resolve({ id: user.uid, email: user.email!, roles: ['user'] }); // Fetch actual roles from database
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
 }
 
 // Export a singleton instance or provide a way to inject it

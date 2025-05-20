@@ -8,52 +8,76 @@
  * This service would interact with a database to store and retrieve complaint data.
  */
 
+import { PrismaClient } from '@prisma/client';
 import type { Report, ReportStatus } from '@/lib/types';
+
+const prisma = new PrismaClient();
 
 export class ComplaintService {
   constructor() {
-    // Initialize database connection
-    console.log('[ComplaintService Placeholder] Initialized. (Would connect to a database)');
+    console.log('[ComplaintService] Initialized.');
   }
 
   async createReport(reportData: Omit<Report, 'id' | 'submissionDate' | 'status'>): Promise<Report> {
-    // Simulate creating a report and saving to a DB
-    const newReport: Report = {
-      ...reportData,
-      id: `db-report-${Date.now()}`,
-      submissionDate: new Date().toISOString(),
-      status: ReportStatus.FILED,
-      // evidenceFiles would need to be handled, potentially storing them in a blob storage
-      // and referencing URLs here.
-    };
-    console.log('[ComplaintService Placeholder] createReport called, report created with ID:', newReport.id);
-    // In a real system, this would be an INSERT query to a database.
-    return newReport;
+    try {
+      const newReport = await prisma.report.create({
+        data: {
+          ...reportData,
+          submissionDate: new Date(),
+          status: ReportStatus.FILED,
+          // evidenceFiles need to be handled, potentially storing them in a blob storage
+          // and referencing URLs here. For now, assuming they are part of reportData
+        },
+      });
+      console.log('[ComplaintService] createReport called, report created with ID:', newReport.id);
+      return newReport;
+    } catch (error) {
+      console.error('[ComplaintService] Error creating report:', error);
+      throw error;
+    }
   }
 
   async getReportById(reportId: string): Promise<Report | null> {
-    console.log('[ComplaintService Placeholder] getReportById called for ID:', reportId);
-    // In a real system, this would be a SELECT query.
-    // Returning null to simulate not found.
-    return null;
+    try {
+      console.log('[ComplaintService] getReportById called for ID:', reportId);
+      const report = await prisma.report.findUnique({
+        where: { id: reportId },
+      });
+      return report;
+    } catch (error) {
+      console.error('[ComplaintService] Error getting report by ID:', error);
+      throw error;
+    }
   }
 
   async updateReportStatus(reportId: string, status: ReportStatus, timelineNotes?: string): Promise<Report | null> {
-    console.log('[ComplaintService Placeholder] updateReportStatus called for ID:', reportId, 'to status:', status);
-    // In a real system, this would be an UPDATE query.
-    const existingReport = await this.getReportById(reportId);
-    if (existingReport) {
-      existingReport.status = status;
-      if (timelineNotes) existingReport.timelineNotes = timelineNotes;
-      return existingReport;
+    try {
+      console.log('[ComplaintService] updateReportStatus called for ID:', reportId, 'to status:', status);
+      const updatedReport = await prisma.report.update({
+        where: { id: reportId },
+        data: {
+          status: status,
+          timelineNotes: timelineNotes || undefined, // Use undefined to avoid updating if not provided
+        },
+      });
+      return updatedReport;
+    } catch (error) {
+      console.error('[ComplaintService] Error updating report status:', error);
+      throw error;
     }
-    return null;
   }
 
   async getReportsByUser(userId: string): Promise<Report[]> {
-    console.log('[ComplaintService Placeholder] getReportsByUser called for user ID:', userId);
-    // In a real system, query reports associated with a user.
-    return [];
+    try {
+      console.log('[ComplaintService] getReportsByUser called for user ID:', userId);
+      const reports = await prisma.report.findMany({
+        where: { userId: userId },
+      });
+      return reports;
+    } catch (error) {
+      console.error('[ComplaintService] Error getting reports by user:', error);
+      throw error;
+    }
   }
   
   // Potentially methods for officer assignment, adding notes, etc.

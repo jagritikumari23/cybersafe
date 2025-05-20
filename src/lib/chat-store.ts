@@ -1,70 +1,43 @@
 
 'use client';
 import type { ChatMessage } from './types';
+import { PrismaClient } from '@prisma/client';
 
-const getChatStorageKey = (chatId: string) => `chatMessages_${chatId}`;
+const prisma = new PrismaClient();
 
-export const getChatMessages = (chatId: string): ChatMessage[] => {
-  if (typeof window === 'undefined') return [];
+export const getChatMessages = async (chatId: string): Promise<ChatMessage[]> => {
   try {
-    const storedMessages = localStorage.getItem(getChatStorageKey(chatId));
-    return storedMessages ? JSON.parse(storedMessages) : [];
+    const messages = await prisma.chatMessage.findMany({
+      where: { chatId },
+      orderBy: {
+        timestamp: 'asc',
+      },
+    });
+    // Map Prisma model to ChatMessage type if necessary (assuming they are compatible)
+    return messages as ChatMessage[];
   } catch (error) {
-    console.error(`Error reading chat messages for ${chatId} from localStorage:`, error);
+    console.error(`Error reading chat messages for ${chatId} from database:`, error);
     return [];
   }
 };
 
-// This function now primarily serves to persist messages to localStorage for the prototype.
-// The message object passed to it might already have server-generated id and timestamp.
-export const addChatMessage = (
+export const addChatMessage = async (
   chatId: string,
-  messageData: Omit<ChatMessage, 'chatId'> & { chatId?: string } // Allow full ChatMessage to be passed
-): ChatMessage => {
-  if (typeof window === 'undefined') {
-    const mockMessage: ChatMessage = {
-      id: messageData.id || `server-mock-${Date.now()}`,
-      timestamp: messageData.timestamp || new Date().toISOString(),
-      sender: messageData.sender,
-      text: messageData.text,
-      chatId: chatId, // Ensure chatId is set correctly
-    };
-    console.warn("addChatMessage called in non-browser environment, returning mock message for chatId:", chatId);
-    return mockMessage;
-  }
-  
+  messageData: Omit<ChatMessage, 'chatId'>
+): Promise<ChatMessage | null> => {
   try {
-    const messages = getChatMessages(chatId);
-    
-    // If a full ChatMessage object (potentially from server) is passed, use its properties.
-    // Otherwise, generate id and timestamp if they are missing.
-    const newMessage: ChatMessage = {
-      id: messageData.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      chatId: chatId, // Always use the provided chatId for storage key consistency
-      sender: messageData.sender,
-      text: messageData.text,
-      timestamp: messageData.timestamp || new Date().toISOString(),
-    };
-
-    // Avoid duplicates if message with same ID already exists (e.g. from server + local echo)
-    const existingMessageIndex = messages.findIndex(m => m.id === newMessage.id);
-    if (existingMessageIndex > -1) {
-      messages[existingMessageIndex] = newMessage; // Update if exists
-    } else {
-      messages.push(newMessage);
-    }
-    
-    localStorage.setItem(getChatStorageKey(chatId), JSON.stringify(messages));
+    const newMessage = await prisma.chatMessage.create({
+      data: {
+        ...messageData,
+        chatId,
+        // Ensure timestamp is a Date object if your schema expects it
+        timestamp: new Date(messageData.timestamp),
+      },
+    });
+    // Map Prisma model to ChatMessage type if necessary
     return newMessage;
   } catch (error) {
-    console.error(`Error saving chat message for ${chatId} to localStorage:`, error);
-    const fallbackMessage: ChatMessage = {
-      id: messageData.id || `error-${Date.now()}`,
-      chatId: chatId,
-      sender: messageData.sender,
-      text: messageData.text,
-      timestamp: messageData.timestamp || new Date().toISOString(),
-    };
-    return fallbackMessage;
+    console.error(`Error saving chat message for ${chatId} to database:`, error);
+    return null;
   }
 };
