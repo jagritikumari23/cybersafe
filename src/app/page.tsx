@@ -11,12 +11,13 @@ export default function HomePage() {
     <div className="container mx-auto px-4 py-8">
       <section className="text-center mb-12">
         <Image 
-          src="https://placehold.co/1200x400.png" 
+          src="https://cdn.mos.cms.futurecdn.net/4GzLubqEAJTg2BP2ggzwvG.jpg" 
           alt="Cybersecurity awareness banner" 
           width={1200} 
           height={400} 
-          className="rounded-lg shadow-lg mx-auto mb-6"
+          className="rounded-lg shadow-lg mx-auto mb-6 object-cover"
           data-ai-hint="cybersecurity digital protection"
+          priority // Added priority as it's likely LCP
         />
         <h1 className="text-4xl md:text-5xl font-bold text-primary mb-4">Welcome to CyberSafe</h1>
         <p className="text-lg md:text-xl text-foreground/80 max-w-3xl mx-auto">
