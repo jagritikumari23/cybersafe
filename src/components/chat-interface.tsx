@@ -25,40 +25,41 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
   const [report, setReport] = useState<Report | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [errorState, setErrorState] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     setIsLoading(true);
+    setErrorState(null);
     const loadedReport = getReportByIdFromStorage(reportId);
+    
+    if (!loadedReport) {
+        setErrorState("Report details could not be loaded. Cannot initialize chat.");
+        setIsLoading(false);
+        return;
+    }
     setReport(loadedReport);
 
     async function initializeChat() {
       if (!chatId || !reportId) {
-        // If loadedReport is also essential before any API call, include: !loadedReport
         console.warn("ChatId or ReportId missing, cannot initialize chat.");
-        setMessages([]); // Clear messages if essential info is missing
+        setErrorState("Essential chat information is missing.");
+        setMessages([]); 
         setIsLoading(false);
         return;
       }
       
-      // Ensure loadedReport is available before proceeding if needed for greeting
-      if (!loadedReport) {
-          console.warn("Report details not loaded yet, deferring chat initialization for greeting check.");
-          setIsLoading(false); // Or handle differently, maybe retry or show specific message
-          return;
-      }
-
-
       try {
         const response = await fetch(`/api/chat/${chatId}/messages`);
         if (!response.ok) {
-          throw new Error(`Failed to fetch messages: ${response.statusText}`);
+          const errorData = await response.json().catch(() => ({ error: `Failed to fetch messages. Status: ${response.status}` }));
+          throw new Error(errorData.error || `Failed to fetch messages: ${response.statusText}`);
         }
         let apiMessages: ChatMessage[] = await response.json();
 
+        // Check if an officer is assigned and if it's a new chat (no messages from API)
         if (apiMessages.length === 0 && loadedReport.assignedOfficerName) {
-          // Chat is new and no messages from API, create and POST officer greeting
           const greetingPayload = {
             sender: 'officer' as 'officer',
             text: `Hello! I am ${loadedReport.assignedOfficerName}. I'm reviewing your report (ID: ${reportId}). How can I assist you further regarding this matter?`,
@@ -71,25 +72,26 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
           });
 
           if (!greetingPostResponse.ok) {
-            const errorData = await greetingPostResponse.json();
+            const errorData = await greetingPostResponse.json().catch(() => ({ error: `Failed to post greeting. Status: ${greetingPostResponse.status}` }));
             throw new Error(errorData.error || `Failed to post initial officer greeting: ${greetingPostResponse.statusText}`);
           }
           const serverGeneratedGreeting: ChatMessage = await greetingPostResponse.json();
-          apiMessages = [serverGeneratedGreeting]; // Start with the greeting from server
-          // Also save this server-confirmed greeting to localStorage
-          addChatMessage(chatId, serverGeneratedGreeting);
+          apiMessages = [serverGeneratedGreeting]; 
+          addChatMessage(chatId, serverGeneratedGreeting); // Also save server-confirmed greeting to localStorage
         }
         
         setMessages(apiMessages);
 
       } catch (error) {
         console.error("Failed to load/initialize chat:", error);
+        const errorMessage = error instanceof Error ? error.message : "Could not load or initialize chat history. Please try again.";
+        setErrorState(errorMessage);
         toast({
-          title: "Chat Error",
-          description: (error instanceof Error ? error.message : "Could not load or initialize chat history. Please try again."),
+          title: "Chat Initialization Error",
+          description: errorMessage,
           variant: "destructive",
         });
-        setMessages([]); // Show empty on error
+        setMessages([]); 
       } finally {
         setIsLoading(false);
       }
@@ -123,22 +125,23 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ error: `Message not sent. Status: ${response.status}` }));
         throw new Error(errorData.error || `Failed to send message: ${response.statusText}`);
       }
 
       const serverResponseMessage: ChatMessage = await response.json();
       
-      addChatMessage(chatId, serverResponseMessage); // Persist server-confirmed message to localStorage
+      addChatMessage(chatId, serverResponseMessage); 
 
       setMessages((prevMessages) => [...prevMessages, serverResponseMessage]);
       setNewMessageText('');
 
     } catch (error) {
       console.error('Error sending message:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Could not send message. Please try again.';
       toast({
         title: 'Error Sending Message',
-        description: (error instanceof Error ? error.message : 'Could not send message. Please try again.'),
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -150,10 +153,21 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
     return <div className="flex flex-1 justify-center items-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <span className="ml-2">Loading messages...</span></div>;
   }
 
-  if (!report) {
+  if (errorState) {
+     return (
+      <div className="flex flex-1 justify-center items-center text-destructive p-4 text-center">
+        <AlertTriangle className="h-8 w-8 mr-2" />
+        <span>{errorState}</span>
+      </div>
+    );
+  }
+  
+  // This check should ideally be redundant due to early return in useEffect if loadedReport is null
+  if (!report) { 
     return (
       <div className="flex flex-1 justify-center items-center text-destructive p-4 text-center">
-        Report details not found. Cannot initiate chat. This might happen if the report ID is invalid or not yet processed.
+         <AlertTriangle className="h-8 w-8 mr-2" />
+        Report details are unavailable. Chat cannot be displayed.
       </div>
     );
   }
@@ -218,9 +232,9 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
             onChange={(e) => setNewMessageText(e.target.value)}
             className="flex-1"
             aria-label="Chat message input"
-            disabled={isSending}
+            disabled={isSending || !!errorState}
           />
-          <Button type="submit" size="icon" disabled={!newMessageText.trim() || isSending}>
+          <Button type="submit" size="icon" disabled={!newMessageText.trim() || isSending || !!errorState}>
             {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             <span className="sr-only">Send message</span>
           </Button>
@@ -229,4 +243,3 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
     </Card>
   );
 }
-
