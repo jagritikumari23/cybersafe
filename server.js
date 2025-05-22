@@ -1,3 +1,4 @@
+
 const express = require('express');
 const { Client } = require('pg');
 const mongoose = require('mongoose');
@@ -19,129 +20,298 @@ const dbConfig = {
 
 const client = new Client(dbConfig);
 
+// In-memory store for prototype (if DB connection fails or for quick iteration)
+// These would be replaced by actual DB interactions.
+const reportsStore = []; // Store report objects
+const chatMessagesStore = {}; // Store chat messages, e.g., { "reportId1": [], "reportId2": [] }
+
+
 // Connect to the database
 client
  .connect()
  .then(() => {
- console.log('Connected to PostgreSQL database');
- // Connect to MongoDB after successful PostgreSQL connection
- mongoose
- .connect('mongodb://localhost:27017/your_mongodb_database', {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-      })
- .then(() => console.log('Connected to MongoDB database'))
- .catch((err) => console.error('Error connecting to MongoDB database', err));
-  })
- .catch((err) => console.error('Error connecting to PostgreSQL database', err));
+    console.log('Connected to PostgreSQL database');
+    // Example: Create tables if they don't exist (conceptual)
+    /*
+    client.query(`
+      CREATE TABLE IF NOT EXISTS reports (
+        id VARCHAR(255) PRIMARY KEY,
+        type VARCHAR(255),
+        description TEXT,
+        incident_date TIMESTAMPTZ,
+        reporter_name VARCHAR(255),
+        reporter_contact VARCHAR(255),
+        status VARCHAR(50),
+        submission_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        ai_triage_category VARCHAR(100),
+        ai_triage_urgency VARCHAR(50),
+        ai_triage_summary TEXT,
+        ai_escalation_target VARCHAR(100),
+        ai_escalation_reasoning TEXT,
+        suspect_details JSONB,
+        incident_location JSONB,
+        additional_evidence_text TEXT,
+        evidence_files_metadata JSONB,
+        timeline_notes TEXT,
+        assigned_officer_name VARCHAR(255),
+        chat_id VARCHAR(255)
+      );
 
-// Initialize Firebase Admin SDK
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        message_id SERIAL PRIMARY KEY,
+        report_id VARCHAR(255) REFERENCES reports(id),
+        sender VARCHAR(50), -- 'user' or 'officer'
+        text TEXT,
+        timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+    `).then(() => console.log("Tables checked/created conceptually."))
+      .catch(err => console.error("Error creating tables conceptually:", err));
+    */
+
+    // Connect to MongoDB after successful PostgreSQL connection
+    mongoose
+    .connect('mongodb://localhost:27017/your_mongodb_database', {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+          })
+    .then(() => console.log('Connected to MongoDB database'))
+    .catch((err) => console.error('Error connecting to MongoDB database', err));
+  })
+ .catch((err) => {
+    console.error('Error connecting to PostgreSQL database:', err, "\nFalling back to in-memory store for this session.");
+  });
+
+// Initialize Firebase Admin SDK (if still needed for other purposes, e.g. Auth)
 // Replace 'path/to/your/serviceAccountKey.json' with the actual path to your service account key file
-const serviceAccount = require('path/to/your/serviceAccountKey.json'); // Placeholder
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-// Use CORS middleware
+// const serviceAccount = require('path/to/your/serviceAccountKey.json'); // Placeholder
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount)
+// });
 
 // Initialize Google Generative AI client
-// Replace 'YOUR_GEMINI_API_KEY' with your actual Gemini API key
-// It's recommended to use environment variables for your API key
-const genAI = new GoogleGenerativeAI('YOUR_GEMINI_API_KEY'); // Placeholder
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }); // Example model
+// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY'); // Placeholder
+// const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }); // Example model
 
 
 app.use(cors());
 
 app.get('/', (req, res) => {
-  res.send('Hello, world!');
+  res.send('CyberSafe Backend is running!');
 });
 
-// New route to write messages to Firebase Realtime Database
-app.post('/api/messages', async (req, res) => {
-  const message = req.body; // Assuming the message is sent in the request body
-
-  try {
-    // Get a reference to the 'messages' node in the Realtime Database
-    const messagesRef = admin.database().ref('messages');
-    // Push the new message to the database
-    await messagesRef.push(message);
-    res.status(201).send('Message sent successfully!');
-  } catch (error) {
-    console.error('Error writing message to Firebase Realtime Database:', error);
-    res.status(500).send('Error sending message.');
-  }
-});
-
-// API route for user registration
+// API route for user registration (Placeholder)
 app.post('/api/register', (req, res) => {
   // Placeholder for user registration logic
-  res.send('Register route is working');
+  // Would interact with Firebase Auth or a users table in PostgreSQL
+  res.status(501).send('Register route placeholder - Not Implemented');
 });
 
-// API route for user login
+// API route for user login (Placeholder)
 app.post('/api/login', (req, res) => {
   // Placeholder for user login logic
-  res.send('Login route is working');
+  res.status(501).send('Login route placeholder - Not Implemented');
 });
 
 // API route to submit a new complaint
-app.post('/api/complaints/submit', (req, res) => {
-  // Placeholder for complaint submission logic
-  res.send('Complaint submission route is working');
+app.post('/api/complaints/submit', async (req, res) => {
+  const reportData = req.body; // Assuming reportData matches the structure needed
+  // Basic validation
+  if (!reportData || !reportData.type || !reportData.description || !reportData.incidentDate) {
+    return res.status(400).json({ error: 'Missing required report fields.' });
+  }
+
+  const reportId = `SRV-${Date.now()}`; // Simple server-generated ID
+  const submissionDate = new Date().toISOString();
+  const initialStatus = 'Filed';
+
+  const newReport = {
+    id: reportId,
+    ...reportData,
+    submissionDate,
+    status: initialStatus,
+    // Other fields like AI triage results would be added after AI processing steps
+  };
+
+  try {
+    // Illustrative PostgreSQL INSERT
+    // const queryText = `
+    //   INSERT INTO reports(id, type, description, incident_date, reporter_name, reporter_contact, status, submission_date, suspect_details, incident_location, additional_evidence_text, evidence_files_metadata)
+    //   VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    //   RETURNING *;
+    // `;
+    // const values = [
+    //   newReport.id, newReport.type, newReport.description, newReport.incidentDate,
+    //   newReport.reporterName, newReport.reporterContact, newReport.status, newReport.submissionDate,
+    //   newReport.suspectDetails ? JSON.stringify(newReport.suspectDetails) : null,
+    //   newReport.incidentLocation ? JSON.stringify(newReport.incidentLocation) : null,
+    //   newReport.additionalEvidenceText,
+    //   newReport.evidenceFiles ? JSON.stringify(newReport.evidenceFiles) : null,
+    // ];
+    // const dbResult = await client.query(queryText, values);
+    // const savedReport = dbResult.rows[0];
+    // console.log('Report saved to PostgreSQL:', savedReport);
+    // res.status(201).json(savedReport);
+
+    // For prototype without live DB or if DB connection failed:
+    reportsStore.push(newReport);
+    console.log('Report saved to in-memory store:', newReport);
+    // Simulate AI processing delay before sending response
+    setTimeout(() => {
+         // In a real backend, AI processing would happen here, updating the newReport object.
+         // For now, we just return it as is.
+        res.status(201).json(newReport);
+    }, 1000);
+
+
+  } catch (error) {
+    console.error('Error submitting complaint:', error);
+    res.status(500).json({ error: 'Error submitting complaint.', details: error.message });
+  }
 });
 
 // API route to get the status of a specific complaint
-app.get('/api/complaints/:id/status', (req, res) => {
-  const complaintId = req.params.id;
-  // Placeholder for fetching complaint status logic
-  res.send(`Status for complaint ${complaintId} is working`);
+app.get('/api/complaints/:id/status', async (req, res) => {
+  const { id: reportId } = req.params;
+  try {
+    // Illustrative PostgreSQL SELECT
+    // const queryText = 'SELECT id, status, timeline_notes FROM reports WHERE id = $1;';
+    // const dbResult = await client.query(queryText, [reportId]);
+    // if (dbResult.rows.length > 0) {
+    //   res.status(200).json(dbResult.rows[0]);
+    // } else {
+    //   res.status(404).json({ error: 'Report not found' });
+    // }
+
+    // For prototype:
+    const report = reportsStore.find(r => r.id === reportId);
+    if (report) {
+      res.status(200).json({ id: report.id, status: report.status, timelineNotes: report.timelineNotes });
+    } else {
+      res.status(404).json({ error: 'Report not found in-memory' });
+    }
+  } catch (error) {
+    console.error(`Error fetching status for complaint ${reportId}:`, error);
+    res.status(500).json({ error: 'Error fetching complaint status.', details: error.message });
+  }
 });
 
 // API route to add a message to a complaint chat
-app.post('/api/complaints/:id/chat', (req, res) => {
-  const complaintId = req.params.id;
-  // Placeholder for adding chat message logic
-  res.send(`Chat route for complaint ${complaintId} is working`);
-});
+app.post('/api/complaints/:id/chat', async (req, res) => {
+  const { id: reportId } = req.params;
+  const { sender, text } = req.body;
 
-// API route to upload evidence
-app.post('/api/upload/evidence', (req, res) => {
-  // Placeholder for evidence upload logic
-  res.send('Evidence upload route is working');
-});
+  if (!sender || !text) {
+    return res.status(400).json({ error: 'Missing sender or text for chat message.' });
+  }
 
-// API route to escalate a complaint or issue
-app.post('/api/escalate', (req, res) => {
-// New route to generate text using Gemini API
-app.get('/api/generate-text', async (req, res) => {
+  const message = {
+    messageId: `msg-${Date.now()}`, // Simple server-generated ID
+    reportId,
+    sender,
+    text,
+    timestamp: new Date().toISOString(),
+  };
+
   try {
-    const prompt = 'Write a short, catchy slogan for a cyber security awareness campaign.'; // Example prompt
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
-    res.status(200).send(text);
+    // Illustrative PostgreSQL INSERT
+    // const queryText = `
+    //   INSERT INTO chat_messages(report_id, sender, text, timestamp)
+    //   VALUES($1, $2, $3, $4)
+    //   RETURNING *;
+    // `;
+    // const values = [message.reportId, message.sender, message.text, message.timestamp];
+    // const dbResult = await client.query(queryText, values);
+    // const savedMessage = dbResult.rows[0];
+    // console.log('Chat message saved to PostgreSQL:', savedMessage);
+    // res.status(201).json(savedMessage);
+
+    // For prototype:
+    if (!chatMessagesStore[reportId]) {
+      chatMessagesStore[reportId] = [];
+    }
+    chatMessagesStore[reportId].push(message);
+    console.log(`Chat message for report ${reportId} saved to in-memory store:`, message);
+    res.status(201).json(message);
+
   } catch (error) {
-    console.error('Error generating text with Gemini API:', error);
-    res.status(500).send('Error generating text.');
+    console.error(`Error adding chat message for complaint ${reportId}:`, error);
+    res.status(500).json({ error: 'Error adding chat message.', details: error.message });
   }
 });
-  // Placeholder for escalation logic
-  res.send('Escalate route is working');
+
+// API route to get chat messages for a specific complaint
+app.get('/api/complaints/:id/chat/messages', async (req, res) => {
+  const { id: reportId } = req.params;
+  try {
+    // Illustrative PostgreSQL SELECT
+    // const queryText = 'SELECT message_id, sender, text, timestamp FROM chat_messages WHERE report_id = $1 ORDER BY timestamp ASC;';
+    // const dbResult = await client.query(queryText, [reportId]);
+    // res.status(200).json(dbResult.rows);
+
+    // For prototype:
+    const messages = chatMessagesStore[reportId] || [];
+    res.status(200).json(messages);
+
+  } catch (error) {
+    console.error(`Error fetching chat messages for complaint ${reportId}:`, error);
+    res.status(500).json({ error: 'Error fetching chat messages.', details: error.message });
+  }
 });
 
-// API route for text translation
-app.get('/api/translate', (req, res) => {
-  // Placeholder for text translation logic
-  res.send('Translate route is working');
+
+// API route to upload evidence (Placeholder - needs file handling)
+app.post('/api/upload/evidence', (req, res) => {
+  // Placeholder for evidence upload logic.
+  // This would typically involve a multipart/form-data parser (e.g., multer)
+  // and saving files to a filesystem or cloud storage (AWS S3, Firebase Storage).
+  console.log('Evidence upload route hit. Body:', req.body); // Log to see what's received
+  res.status(501).send('Evidence upload placeholder - Not Implemented with file handling.');
 });
 
-// API route for voice-to-text conversion
+// API route to escalate a complaint or issue (Placeholder)
+app.post('/api/escalate', (req, res) => {
+  res.status(501).send('Escalate route placeholder - Not Implemented');
+});
+
+// API route for text translation (Placeholder - Genkit flow should be used directly by Next.js if possible)
+app.post('/api/translate', async (req, res) => {
+    // const { textToTranslate, targetLanguage, sourceLanguage } = req.body;
+    // if (!textToTranslate || !targetLanguage) {
+    //   return res.status(400).json({ error: 'Missing textToTranslate or targetLanguage.' });
+    // }
+    // try {
+    //   // Conceptual: Call Genkit translate flow if this Express server runs Genkit
+    //   // const translationResult = await callGenkitTranslateFlow({textToTranslate, targetLanguage, sourceLanguage});
+    //   // res.status(200).json(translationResult);
+    //   res.status(501).json({ message: "Translate route placeholder - Genkit flows are typically called from Next.js API routes or server components."})
+    // } catch (error) {
+    //   res.status(500).json({ error: 'Translation failed.', details: error.message });
+    // }
+    res.status(501).send('Translate route placeholder - Not Implemented directly in Express, prefer Genkit in Next.js API Routes.');
+});
+
+// API route for voice-to-text conversion (Placeholder)
 app.post('/api/voice-to-text', (req, res) => {
-  // Placeholder for voice-to-text logic
-  res.send('Voice-to-text route is working');
+  res.status(501).send('Voice-to-text route placeholder - Not Implemented');
 });
+
+// Gemini API example (can be part of a specific flow if needed, or a direct utility)
+// app.get('/api/generate-text', async (req, res) => {
+//   try {
+//     const prompt = 'Write a short, catchy slogan for a cyber security awareness campaign.'; // Example prompt
+//     const result = await model.generateContent(prompt);
+//     const response = result.response;
+//     const text = response.text();
+//     res.status(200).send(text);
+//   } catch (error) {
+//     console.error('Error generating text with Gemini API:', error);
+//     res.status(500).send('Error generating text.');
+//   }
+// });
 
 app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
-  console.log('Express server started');
+  console.log(`Express server listening on port ${port}`);
+  console.log('This server provides conceptual backend routes. The Next.js app uses its own API routes for current functionality.');
 });
+
+    
