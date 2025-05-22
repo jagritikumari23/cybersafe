@@ -3,8 +3,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { ChatMessage, Report } from '@/lib/types';
-import { addChatMessage } from '@/lib/chat-store'; // getChatMessages is no longer used for initial load
-import { getReportByIdFromStorage } from '@/lib/report-store';
+import { addChatMessage } from '@/lib/chat-store.ts';
+// Removed: import { getReportByIdFromStorage } from '@/lib/report-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -32,34 +32,45 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
   useEffect(() => {
     setIsLoading(true);
     setErrorState(null);
-    const loadedReport = getReportByIdFromStorage(reportId);
-    
-    if (!loadedReport) {
-        setErrorState("Report details could not be loaded. Cannot initialize chat.");
-        setIsLoading(false);
-        return;
-    }
-    setReport(loadedReport);
 
-    async function initializeChat() {
+    async function fetchReportDetailsAndInitializeChat() {
       if (!chatId || !reportId) {
         console.warn("ChatId or ReportId missing, cannot initialize chat.");
         setErrorState("Essential chat information is missing.");
-        setMessages([]); 
         setIsLoading(false);
         return;
       }
-      
-      try {
-        const response = await fetch(`/api/chat/${chatId}/messages`);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: `Failed to fetch messages. Status: ${response.status}` }));
-          throw new Error(errorData.error || `Failed to fetch messages: ${response.statusText}`);
-        }
-        let apiMessages: ChatMessage[] = await response.json();
 
-        // Check if an officer is assigned and if it's a new chat (no messages from API)
-        if (apiMessages.length === 0 && loadedReport.assignedOfficerName) {
+      let loadedReport: Report | null = null;
+      try {
+        // Fetch report details first
+        const reportResponse = await fetch(`/api/reports/${reportId}`);
+        if (!reportResponse.ok) {
+          const errorData = await reportResponse.json().catch(() => ({ error: "Failed to fetch report details" }));
+          throw new Error(errorData.error || `Failed to fetch report details: ${reportResponse.statusText}`);
+        }
+        loadedReport = await reportResponse.json();
+        
+        if (!loadedReport || !loadedReport.id) { // Check if the response is a valid report object
+            // The GET /api/reports/[reportId] currently returns a generic message if not found in memory
+            // For a real app, it should return 404. We'll adapt to its current placeholder behavior.
+            if (loadedReport && (loadedReport as any).message?.includes("Endpoint for report")) {
+                 console.warn(`Report ${reportId} not found via API. The API might be returning a placeholder.`);
+                 throw new Error(`Report with ID ${reportId} not found. Chat cannot be initialized.`);
+            }
+            throw new Error("Report details could not be loaded. Invalid data received.");
+        }
+        setReport(loadedReport);
+
+        // Fetch chat messages
+        const messagesResponse = await fetch(`/api/chat/${chatId}/messages`);
+        if (!messagesResponse.ok) {
+          const errorData = await messagesResponse.json().catch(() => ({ error: `Failed to fetch messages. Status: ${messagesResponse.status}` }));
+          throw new Error(errorData.error || `Failed to fetch messages: ${messagesResponse.statusText}`);
+        }
+        let apiMessages: ChatMessage[] = await messagesResponse.json();
+
+        if (apiMessages.length === 0 && loadedReport && loadedReport.assignedOfficerName) {
           const greetingPayload = {
             sender: 'officer' as 'officer',
             text: `Hello! I am ${loadedReport.assignedOfficerName}. I'm reviewing your report (ID: ${reportId}). How can I assist you further regarding this matter?`,
@@ -76,28 +87,27 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
             throw new Error(errorData.error || `Failed to post initial officer greeting: ${greetingPostResponse.statusText}`);
           }
           const serverGeneratedGreeting: ChatMessage = await greetingPostResponse.json();
-          apiMessages = [serverGeneratedGreeting]; 
-          addChatMessage(chatId, serverGeneratedGreeting); // Also save server-confirmed greeting to localStorage
+          apiMessages = [serverGeneratedGreeting];
+          addChatMessage(chatId, serverGeneratedGreeting);
         }
-        
         setMessages(apiMessages);
 
       } catch (error) {
         console.error("Failed to load/initialize chat:", error);
-        const errorMessage = error instanceof Error ? error.message : "Could not load or initialize chat history. Please try again.";
+        const errorMessage = error instanceof Error ? error.message : "Could not load or initialize chat. Please try again.";
         setErrorState(errorMessage);
         toast({
           title: "Chat Initialization Error",
           description: errorMessage,
           variant: "destructive",
         });
-        setMessages([]); 
+        setMessages([]);
       } finally {
         setIsLoading(false);
       }
     }
 
-    initializeChat();
+    fetchReportDetailsAndInitializeChat();
 
   }, [chatId, reportId, toast]);
 
@@ -162,7 +172,6 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
     );
   }
   
-  // This check should ideally be redundant due to early return in useEffect if loadedReport is null
   if (!report) { 
     return (
       <div className="flex flex-1 justify-center items-center text-destructive p-4 text-center">
@@ -243,3 +252,4 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
     </Card>
   );
 }
+

@@ -35,12 +35,7 @@ import { AlertTriangle, CalendarIcon, FileText, Globe, Info, Languages, Loader2,
 import { cn } from '@/lib/utils';
 import { format } from "date-fns"
 import { useToast } from '@/hooks/use-toast';
-import { ReportType, type EvidenceFile, ReportStatus, type Report, AITriageCategory, AITriageUrgency, EscalationTarget, type SuspectDetails, type IncidentLocation, ComplaintLanguages, type ComplaintLanguageCode, type FraudPatternInfo } from '@/lib/types';
-import { addReportToStorage, updateReportInStorage, getReportsFromStorage } from '@/lib/report-store';
-import { autoTriage, type AutoTriageInput } from '@/ai/flows/auto-triage';
-import { suggestEscalation, type SuggestEscalationInput } from '@/ai/flows/suggest-escalation-flow';
-import { translateText, type TranslateTextInput } from '@/ai/flows/translate-text-flow';
-import { detectFraudPatterns, type DetectFraudPatternsInput } from '@/ai/flows/detect-fraud-patterns-flow';
+import { ReportType, type EvidenceFile, type Report, type SuspectDetails, type IncidentLocation, ComplaintLanguages, type ComplaintLanguageCode } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -72,43 +67,37 @@ const reportSchema = z.object({
   manualLocationCountry: z.string().optional(),
   
   additionalEvidenceText: z.string().max(2000, "Additional evidence text too long").optional(),
-  evidenceFiles: z.array(z.custom<File>(val => val instanceof File)).max(5, 'You can upload a maximum of 5 files.').optional(),
+  // evidenceFiles are handled separately as they are File objects, not directly part of Zod schema for form values in the same way
+}).refine(data => {
+    if (data.locationType === 'manual') {
+        return !!data.manualLocationCity && !!data.manualLocationState && !!data.manualLocationCountry;
+    }
+    return true;
+}, {
+    message: "City, State, and Country are required for manual location entry.",
+    path: ["manualLocationCity"], // Path to display error, can be any of them
 });
 
+
 type ReportFormValues = z.infer<typeof reportSchema>;
-
-function generateStructuredId(city?: string, state?: string): string {
-  const stateAbbr = state ? state.substring(0, 2).toUpperCase() : 'XX';
-  const cityAbbr = city ? city.substring(0, 3).toUpperCase() : 'YYY';
-  const year = new Date().getFullYear();
-  const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
-  return `${stateAbbr}-${cityAbbr}-${year}-${randomSuffix}`;
-}
-
-// Simulated known fraudulent indicators for prototype
-const KNOWN_FRAUD_INDICATORS_TEXT = `
-Known scammer emails: danger@scamdomain.com, phisher@fakebank.org, urgent@verify-account.net
-Known scam phone numbers: +911234500000, +18005551001
-Suspicious IP addresses: 10.0.0.1 (internal, likely a mistake if reported), 203.0.113.45
-Flagged bank accounts: 12345678900 (Generic Bank), 98765432100 (Another Bank)
-Website patterns: sites ending in .xyz, .top, .live that ask for credentials; sites impersonating official government portals with slight misspellings.
-Other suspicious info: "Received SMS asking to click link to update KYC", "Job offer asking for upfront payment via UPI to unofficial ID"
-`;
-
 
 export default function ReportIncidentForm() {
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<EvidenceFile[]>([]);
+  const [selectedFilesData, setSelectedFilesData] = useState<EvidenceFile[]>([]); // For display and to send to backend
+  const [actualFiles, setActualFiles] = useState<File[]>([]); // For potential direct upload later, not directly used in this JSON submission
+
   const [autoLocation, setAutoLocation] = useState<Partial<IncidentLocation> | null>(null);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
   const form = useForm<ReportFormValues>({
     resolver: zodResolver(reportSchema),
     defaultValues: {
-      originalDescriptionLanguage: 'en', // Default to English
+      type: undefined, // No default type
+      originalDescriptionLanguage: 'en', 
       description: '',
+      incidentDate: undefined,
       reporterName: '',
       reporterContact: '',
       suspectPhone: '',
@@ -122,14 +111,13 @@ export default function ReportIncidentForm() {
       manualLocationState: '',
       manualLocationCountry: 'India', 
       additionalEvidenceText: '',
-      evidenceFiles: [],
     },
   });
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
       const filesArray = Array.from(event.target.files);
-      const currentFilesCount = selectedFiles.length;
+      const currentFilesCount = selectedFilesData.length;
       const newFilesCount = filesArray.length;
 
       if (currentFilesCount + newFilesCount > 5) {
@@ -137,8 +125,8 @@ export default function ReportIncidentForm() {
         event.target.value = ''; return;
       }
       
-      const newEvidenceFiles: EvidenceFile[] = [];
-      const newFormFiles: File[] = [];
+      const newEvidenceFilesForDisplay: EvidenceFile[] = [];
+      const newActualFormFiles: File[] = [];
 
       for (const file of filesArray) {
         if (file.size > MAX_FILE_SIZE) {
@@ -149,31 +137,40 @@ export default function ReportIncidentForm() {
           toast({ title: "Invalid File Type", description: `${file.name} has an unsupported file type.`, variant: "destructive" });
           event.target.value = ''; return;
         }
-        newEvidenceFiles.push({ name: file.name, type: file.type, size: file.size });
-        newFormFiles.push(file);
+        newEvidenceFilesForDisplay.push({ name: file.name, type: file.type, size: file.size });
+        newActualFormFiles.push(file);
       }
-      setSelectedFiles(prev => [...prev, ...newEvidenceFiles]);
-      form.setValue('evidenceFiles', [...(form.getValues('evidenceFiles') || []), ...newFormFiles] as any);
+      setSelectedFilesData(prev => [...prev, ...newEvidenceFilesForDisplay]);
+      setActualFiles(prev => [...prev, ...newActualFormFiles]); // Store actual files if needed for direct upload later
       event.target.value = '';
     }
   };
 
   const removeFile = (fileName: string) => {
-    setSelectedFiles(prevFiles => prevFiles.filter(file => file.name !== fileName));
-    const currentFormFiles = form.getValues('evidenceFiles') || [];
-    form.setValue('evidenceFiles', currentFormFiles.filter(file => file.name !== fileName));
+    setSelectedFilesData(prevFiles => prevFiles.filter(file => file.name !== fileName));
+    setActualFiles(prevFiles => prevFiles.filter(file => file.name !== fileName));
   };
-
+  
   const fetchUserLocation = () => {
     if (navigator.geolocation) {
       setIsFetchingLocation(true);
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const { latitude, longitude } = position.coords;
+          // Basic reverse geocoding simulation (would use a service like Google Geocoding API in real app)
+          let city = "Unknown City", state = "Unknown State", country = "Unknown Country";
+          try {
+            // Placeholder: In a real app, call a geocoding API here
+            // For prototype, we'll keep it simple.
+             city = "Auto-Detected City"; // Placeholder
+             state = "Auto-Detected State"; // Placeholder
+             country = "India (Approx.)";
+          } catch (e) { console.error("Geocoding simulation error", e); }
+
           const locationDetails = `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`;
-          setAutoLocation({ latitude, longitude, details: locationDetails, country: "India (auto-detected)" });
+          setAutoLocation({ latitude, longitude, details: locationDetails, city, state, country });
           form.setValue('locationType', 'auto');
-          toast({ title: "Location Fetched", description: "Your current location has been automatically determined." });
+          toast({ title: "Location Fetched", description: `Location: ${city}, ${state}` });
           setIsFetchingLocation(false);
         },
         (error) => {
@@ -181,7 +178,8 @@ export default function ReportIncidentForm() {
           toast({ title: 'Location Error', description: 'Could not fetch location. Please enter manually or ensure permissions are granted.', variant: 'destructive' });
           form.setValue('locationType', 'manual'); 
           setIsFetchingLocation(false);
-        }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
       toast({ title: 'Location Not Supported', description: 'Geolocation is not supported by your browser. Please enter manually.', variant: 'warning' });
@@ -190,7 +188,8 @@ export default function ReportIncidentForm() {
   };
 
   useEffect(() => {
-    if (form.watch('locationType') === 'auto' && !autoLocation && !isFetchingLocation) {
+    const locationType = form.watch('locationType');
+    if (locationType === 'auto' && !autoLocation && !isFetchingLocation) {
       fetchUserLocation();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,19 +199,19 @@ export default function ReportIncidentForm() {
   async function onSubmit(data: ReportFormValues) {
     setIsSubmitting(true);
 
-    let incidentLocationData: IncidentLocation;
+    let incidentLocationPayload: IncidentLocation;
     if (data.locationType === 'auto' && autoLocation) {
-      incidentLocationData = {
+      incidentLocationPayload = {
         type: 'auto',
         details: autoLocation.details || 'Auto-detected location',
         latitude: autoLocation.latitude,
         longitude: autoLocation.longitude,
         city: autoLocation.city, 
         state: autoLocation.state, 
-        country: autoLocation.country || 'India',
+        country: autoLocation.country || 'India (auto-detected)',
       };
     } else if (data.locationType === 'manual') {
-      incidentLocationData = {
+      incidentLocationPayload = {
         type: 'manual',
         city: data.manualLocationCity,
         state: data.manualLocationState,
@@ -220,12 +219,10 @@ export default function ReportIncidentForm() {
         details: [data.manualLocationCity, data.manualLocationState, data.manualLocationCountry].filter(Boolean).join(', ') || 'Manual location entry',
       };
     } else {
-      incidentLocationData = { type: 'not_provided' };
+      incidentLocationPayload = { type: 'not_provided' };
     }
     
-    const reportId = generateStructuredId(incidentLocationData.city, incidentLocationData.state);
-
-    const suspectDetails: SuspectDetails = {
+    const suspectDetailsPayload: SuspectDetails = {
         phone: data.suspectPhone,
         email: data.suspectEmail,
         ipAddress: data.suspectIpAddress,
@@ -233,186 +230,59 @@ export default function ReportIncidentForm() {
         bankAccount: data.suspectBankAccount,
         otherInfo: data.suspectOtherInfo,
     };
-    
-    const selectedLanguageLabel = ComplaintLanguages.find(lang => lang.value === data.originalDescriptionLanguage)?.label || data.originalDescriptionLanguage;
 
-    let currentReport: Report = {
-      id: reportId,
+    // We send `selectedFilesData` which contains name, type, size.
+    // Actual file binary data upload would require a different mechanism (e.g., FormData to a dedicated upload endpoint).
+    const reportPayload = {
       type: data.type,
+      originalDescriptionLanguage: data.originalDescriptionLanguage,
       description: data.description,
-      originalDescriptionLanguage: selectedLanguageLabel,
-      incidentDate: data.incidentDate.toISOString(),
+      incidentDate: data.incidentDate.toISOString(), // Ensure date is ISO string
       reporterName: data.reporterName,
       reporterContact: data.reporterContact,
-      suspectDetails: Object.values(suspectDetails).some(val => val && String(val).trim().length > 0) ? suspectDetails : undefined,
-      incidentLocation: incidentLocationData.type !== 'not_provided' && (incidentLocationData.details || incidentLocationData.city) ? incidentLocationData : undefined,
+      suspectDetails: Object.values(suspectDetailsPayload).some(val => String(val).trim()) ? suspectDetailsPayload : undefined,
+      incidentLocation: incidentLocationPayload,
       additionalEvidenceText: data.additionalEvidenceText,
-      evidenceFiles: selectedFiles,
-      submissionDate: new Date().toISOString(),
-      status: ReportStatus.FILED,
-      timelineNotes: "Report submitted. Awaiting initial processing."
+      evidenceFiles: selectedFilesData, // Sending metadata
     };
-    addReportToStorage(currentReport);
-    toast({ title: 'Report Filed', description: `Your report ID is ${reportId}. Starting analysis.` });
 
     try {
-      // Translation if necessary
-      let descriptionForAI = data.description;
-      if (data.originalDescriptionLanguage !== 'en' && selectedLanguageLabel !== 'English') {
-        currentReport.status = ReportStatus.TRANSLATION_PENDING;
-        currentReport.timelineNotes = "Report submitted. Translating description to English...";
-        updateReportInStorage(currentReport);
-        toast({ title: 'Processing...', description: `Report ${reportId}: Translating description to English.`, duration: 2000 });
+      toast({ title: 'Submitting Report...', description: 'Please wait while we process your report.', duration: 3000 });
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(reportPayload),
+      });
 
-        const translateInput: TranslateTextInput = {
-          textToTranslate: data.description,
-          targetLanguage: 'English',
-          sourceLanguage: selectedLanguageLabel,
-        };
-        const translationResult = await translateText(translateInput);
-        currentReport.descriptionInEnglish = translationResult.translatedText;
-        descriptionForAI = translationResult.translatedText;
-        currentReport.status = ReportStatus.TRANSLATION_COMPLETED;
-        currentReport.timelineNotes = "Description translated to English. Starting AI Triage...";
-        updateReportInStorage(currentReport);
-        toast({ title: 'Translation Completed', description: `Report ${reportId}: Description translated.`, variant: "default" });
-      } else {
-        currentReport.descriptionInEnglish = data.description; // Original is already English
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({error: "Server error during submission."}));
+        throw new Error(errorData.details || errorData.error || `Server responded with ${response.status}`);
       }
 
-      // AI Triage
-      currentReport.status = ReportStatus.AI_TRIAGE_PENDING;
-      currentReport.timelineNotes = currentReport.timelineNotes || "Report submitted. AI Triage in progress...";
-      if (data.originalDescriptionLanguage === 'en' || selectedLanguageLabel === 'English') currentReport.timelineNotes = "Report submitted. AI Triage in progress...";
-      updateReportInStorage(currentReport);
-      toast({ title: 'Processing...', description: `Report ${reportId}: AI Triage is in progress.`, duration: 2000 });
+      const submittedReport: Report = await response.json();
 
-      const triageInput: AutoTriageInput = {
-        reportText: descriptionForAI,
-        reportType: data.type,
-      };
-      const triageResult = await autoTriage(triageInput);
-      
-      currentReport.aiTriage = {
-          category: triageResult.category as AITriageCategory | string,
-          urgency: triageResult.urgency as AITriageUrgency | string,
-          summary: triageResult.summary,
-      };
-      currentReport.status = ReportStatus.AI_TRIAGE_COMPLETED;
-      currentReport.timelineNotes = `AI Triage complete. Category: ${triageResult.category}. Urgency: ${triageResult.urgency}. Preparing escalation suggestion...`;
-      updateReportInStorage(currentReport);
-      toast({ title: 'AI Triage Completed', description: `Report ${reportId} analyzed. Category: ${triageResult.category}, Urgency: ${triageResult.urgency}.`, variant: "default" });
-
-      // Escalation Suggestion
-      currentReport.status = ReportStatus.ESCALATION_SUGGESTION_PENDING;
-      updateReportInStorage(currentReport);
-      toast({ title: 'Processing...', description: `Report ${reportId}: Suggesting escalation path.`, duration: 2000 });
-      
-      let suspectInfoForAI = "No specific suspect details provided.";
-      if (currentReport.suspectDetails) {
-        suspectInfoForAI = Object.entries(currentReport.suspectDetails)
-            .filter(([, value]) => value && String(value).trim() !== "")
-            .map(([key, value]) => `${key.replace(/([A-Z])/g, ' $1').trim()}: ${value}`) 
-            .join(', ') || suspectInfoForAI;
-      }
-      
-      let locationInfoForAI = "Location not specified or not relevant.";
-      if (currentReport.incidentLocation && currentReport.incidentLocation.type !== 'not_provided') {
-        if (currentReport.incidentLocation.type === 'auto' && currentReport.incidentLocation.details) {
-            locationInfoForAI = `Incident location (auto-detected): ${currentReport.incidentLocation.details}.`;
-        } else if (currentReport.incidentLocation.type === 'manual' && currentReport.incidentLocation.details) {
-            locationInfoForAI = `Incident location (manual entry): ${currentReport.incidentLocation.details}.`;
-        }
-      }
-
-      const escalationInput: SuggestEscalationInput = {
-        reportText: descriptionForAI, 
-        reportType: data.type,
-        suspectInfo: suspectInfoForAI,
-        locationInfo: locationInfoForAI,
-        additionalEvidenceText: data.additionalEvidenceText || 'None',
-        triageCategory: triageResult.category,
-        triageUrgency: triageResult.urgency,
-      };
-      const escalationResult = await suggestEscalation(escalationInput);
-
-      currentReport.aiEscalation = {
-        target: escalationResult.suggestedTarget as EscalationTarget | string,
-        reasoning: escalationResult.reasoning,
-      };
-      currentReport.status = ReportStatus.ESCALATION_SUGGESTION_COMPLETED;
-      currentReport.timelineNotes = `Escalation suggested: ${escalationResult.suggestedTarget}. Analyzing for fraud patterns...`;
-      updateReportInStorage(currentReport);
-      toast({ title: 'Escalation Suggestion Ready', description: `Report ${reportId}: Suggested Escalation - ${escalationResult.suggestedTarget}.`, variant: "default" });
-      
-      // Fraud Pattern Detection (Simulated)
-      if (currentReport.suspectDetails && Object.values(currentReport.suspectDetails).some(val => val && String(val).trim().length > 0)) {
-        currentReport.status = ReportStatus.FRAUD_PATTERN_ANALYSIS_PENDING;
-        updateReportInStorage(currentReport);
-        toast({ title: 'Processing...', description: `Report ${reportId}: Checking for known fraud patterns.`, duration: 2000 });
-
-        const fraudPatternInput: DetectFraudPatternsInput = {
-            currentReportSuspectInfo: currentReport.suspectDetails,
-            knownFraudulentIndicatorsText: KNOWN_FRAUD_INDICATORS_TEXT,
-        };
-        const fraudPatternResult = await detectFraudPatterns(fraudPatternInput);
-        currentReport.fraudPatternInfo = fraudPatternResult;
-        currentReport.status = ReportStatus.FRAUD_PATTERN_ANALYSIS_COMPLETED;
-        currentReport.timelineNotes = (currentReport.timelineNotes || "") + ` Fraud Pattern Analysis: ${fraudPatternResult.detected ? `Detected (${fraudPatternResult.details})` : 'No specific patterns detected.'}`;
-        updateReportInStorage(currentReport);
-        if (fraudPatternResult.detected) {
-            toast({ title: 'Fraud Pattern Alert!', description: `Report ${reportId}: Potential link to known fraudulent activity found. Details: ${fraudPatternResult.details}`, variant: 'destructive', duration: 8000 });
-        } else {
-            toast({ title: 'Fraud Pattern Check', description: `Report ${reportId}: No immediate match to known fraud patterns.`, variant: 'default' });
-        }
-      } else {
-         currentReport.fraudPatternInfo = { detected: false, details: "No suspect information provided for pattern analysis." };
-         currentReport.status = ReportStatus.FRAUD_PATTERN_ANALYSIS_COMPLETED; // Still mark as complete
-      }
-      
-      // Final status update
-      if (triageResult.urgency === AITriageUrgency.HIGH || triageResult.urgency === AITriageUrgency.MEDIUM) {
-        currentReport.assignedOfficerName = "Officer K (System Assigned)"; 
-        currentReport.chatId = `chat_${reportId}`;
-        currentReport.status = ReportStatus.OFFICER_ASSIGNED;
-        currentReport.timelineNotes = `AI analysis complete. ${currentReport.fraudPatternInfo?.detected ? 'Fraud pattern detected. ' : ''}Officer K assigned. Investigation will commence shortly. You can use the chat feature for updates.`;
-         toast({ title: 'Officer Assigned', description: `Officer K assigned to Report ${reportId}. ${currentReport.fraudPatternInfo?.detected ? 'Linked to potential fraud pattern. ' : ''}Suggested Escalation: ${escalationResult.suggestedTarget}.`, variant: "default", duration: 6000 });
-      } else {
-        currentReport.status = ReportStatus.CASE_ACCEPTED; 
-        currentReport.timelineNotes = `AI analysis complete. ${currentReport.fraudPatternInfo?.detected ? 'Fraud pattern detected. ' : ''}Your case has been accepted and will be reviewed for further action. Suggested Escalation: ${escalationResult.suggestedTarget}.`;
-        toast({ title: 'Case Accepted for Review', description: `Report ${reportId} processed. ${currentReport.fraudPatternInfo?.detected ? 'Linked to potential fraud pattern. ' : ''}Suggested Escalation: ${escalationResult.suggestedTarget}.`, variant: "default", duration: 6000 });
-      }
-
-      if (escalationResult.suggestedTarget !== EscalationTarget.INTERNAL_REVIEW_FURTHER_INFO_NEEDED) {
-        toast({
-            title: "Authority Notification (Simulated)",
-            description: `A notification for escalation to ${escalationResult.suggestedTarget} would be sent.`,
-            variant: "info",
-            duration: 5000
-        });
-      }
-      
-      updateReportInStorage(currentReport);
+      toast({
+        title: 'Report Submitted Successfully!',
+        description: `Your report ID is ${submittedReport.id}. AI analysis results are available.`,
+        variant: 'default',
+        duration: 8000,
+      });
       
       form.reset();
-      setSelectedFiles([]);
+      setSelectedFilesData([]);
+      setActualFiles([]);
       setAutoLocation(null);
-      router.push(`/track-report?id=${reportId}`);
+      router.push(`/track-report?id=${submittedReport.id}`);
 
     } catch (error) {
-      console.error('Error during AI processing steps:', error);
-      currentReport.status = ReportStatus.FILED; 
-      currentReport.aiTriage = currentReport.aiTriage || { category: "Error", urgency: "N/A", summary: "AI Triage failed."};
-      currentReport.aiEscalation = currentReport.aiEscalation || { target: EscalationTarget.INTERNAL_REVIEW_FURTHER_INFO_NEEDED, reasoning: "Escalation suggestion failed."};
-      currentReport.fraudPatternInfo = currentReport.fraudPatternInfo || { detected: false, details: "Fraud pattern analysis could not be completed due to an error."};
-      currentReport.timelineNotes = "An error occurred during AI analysis. Your report has been filed with basic details. Please check tracking. It will be manually reviewed.";
-      updateReportInStorage(currentReport);
+      console.error('Error submitting report:', error);
       toast({
-        title: 'Processing Error',
-        description: (error instanceof Error ? error.message : 'An error occurred during AI analysis. Report submitted. It will be manually reviewed.'),
+        title: 'Submission Error',
+        description: (error instanceof Error ? error.message : 'An unknown error occurred. Please try again.'),
         variant: 'destructive',
       });
-      router.push(`/track-report?id=${reportId}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -564,12 +434,20 @@ export default function ReportIncidentForm() {
                         <FormItem className="space-y-3">
                             <FormLabel>How would you like to provide location?</FormLabel>
                             <FormControl>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <Select onValueChange={(value) => {
+                                field.onChange(value);
+                                if (value === 'auto') fetchUserLocation();
+                                if (value !== 'manual') { // Clear manual fields if not manual
+                                    form.setValue('manualLocationCity', '');
+                                    form.setValue('manualLocationState', '');
+                                    // form.setValue('manualLocationCountry', 'India'); // Keep default or clear as needed
+                                }
+                            }} defaultValue={field.value}>
                                 <SelectTrigger><SelectValue placeholder="Select location method" /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="not_provided">Prefer not to say / Not relevant</SelectItem>
-                                    <SelectItem value="auto">Use My Current Location</SelectItem>
-                                    <SelectItem value="manual">Enter Manually</SelectItem>
+                                    <SelectItem value="auto"><div className="flex items-center"><LocateFixed className="mr-2 h-4 w-4"/>Use My Current Location</div></SelectItem>
+                                    <SelectItem value="manual"><div className="flex items-center"><MapPin className="mr-2 h-4 w-4"/>Enter Manually</div></SelectItem>
                                 </SelectContent>
                             </Select>
                             </FormControl>
@@ -580,17 +458,17 @@ export default function ReportIncidentForm() {
                     {form.watch('locationType') === 'auto' && (
                         <div className="p-3 border rounded-md bg-muted/50">
                             {isFetchingLocation && <p className="text-sm text-muted-foreground flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Fetching location...</p>}
-                            {autoLocation?.details && <p className="text-sm text-foreground">Auto-detected: {autoLocation.details}</p>}
-                            {!isFetchingLocation && !autoLocation?.details && <p className="text-sm text-destructive">Could not fetch location. Try manual entry.</p>}
+                            {autoLocation?.details && <p className="text-sm text-foreground">Auto-detected: {autoLocation.details} ({autoLocation.city}, {autoLocation.state})</p>}
+                            {!isFetchingLocation && !autoLocation?.details && form.watch('locationType') === 'auto' && <p className="text-sm text-destructive">Could not fetch location. Ensure permissions are granted, or try manual entry.</p>}
                         </div>
                     )}
                     {form.watch('locationType') === 'manual' && (
-                        <div className="space-y-4">
+                        <div className="space-y-4 p-1 border border-dashed rounded-md mt-2">
                             <div className="grid md:grid-cols-2 gap-6">
                                 <FormField control={form.control} name="manualLocationCity" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="City of incident" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="manualLocationState" render={({ field }) => (<FormItem><FormLabel>State/Province</FormLabel><FormControl><Input placeholder="State/Province" {...field} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
-                            <FormField control={form.control} name="manualLocationCountry" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Country of incident" defaultValue="India" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="manualLocationCountry" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Country of incident" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
                     )}
                 </AccordionContent>
@@ -612,30 +490,24 @@ export default function ReportIncidentForm() {
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="evidenceFiles"
-                    render={({ field }) => ( 
-                      <FormItem>
+                   <FormItem> {/* No FormField needed as not directly part of Zod schema for form.handleSubmit */}
                         <FormLabel>Upload Evidence Files (Screenshots, Documents)</FormLabel>
                         <FormControl>
                           <div className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg cursor-pointer border-input hover:border-primary transition-colors">
                             <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
                             <p className="mb-2 text-sm text-muted-foreground"><span className="font-semibold">Click to upload</span> or drag and drop</p>
                             <p className="text-xs text-muted-foreground">Max 5 files, up to 5MB each. Allowed: JPG, PNG, PDF, TXT, MP4, MOV</p>
-                            <Input type="file" multiple className="hidden" id="evidence-upload" onChange={handleFileChange} accept={ALLOWED_FILE_TYPES.join(',')} value="" />
+                            <Input type="file" multiple className="hidden" id="evidence-upload" onChange={handleFileChange} accept={ALLOWED_FILE_TYPES.join(',')} />
                             <label htmlFor="evidence-upload" className="mt-2 text-sm font-medium text-primary hover:text-primary/80 cursor-pointer">Browse files</label>
                           </div>
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {selectedFiles.length > 0 && (
+                        <FormMessage /> {/* For general file errors if any, not from Zod */}
+                    </FormItem>
+                  {selectedFilesData.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-sm font-medium">Selected Files:</h4>
                       <ul className="space-y-1 list-disc list-inside">
-                        {selectedFiles.map((file, index) => (
+                        {selectedFilesData.map((file, index) => (
                           <li key={`${file.name}-${index}`} className="text-sm flex items-center justify-between">
                             <span className="truncate max-w-[calc(100%-4rem)]"><FileText className="inline h-4 w-4 mr-1 text-muted-foreground"/>{file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
                             <Button type="button" variant="ghost" size="sm" onClick={() => removeFile(file.name)} className="text-destructive hover:text-destructive/80">Remove</Button>
