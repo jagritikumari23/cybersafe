@@ -1,43 +1,58 @@
 
 'use client';
 import type { ChatMessage } from './types';
-import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
-
-export const getChatMessages = async (chatId: string): Promise<ChatMessage[]> => {
+// Helper to get all chat messages from localStorage
+const getAllChats = (): Record<string, ChatMessage[]> => {
+  if (typeof window === 'undefined') return {};
   try {
-    const messages = await prisma.chatMessage.findMany({
-      where: { chatId },
-      orderBy: {
-        timestamp: 'asc',
-      },
-    });
-    // Map Prisma model to ChatMessage type if necessary (assuming they are compatible)
-    return messages as ChatMessage[];
+    const allChats = localStorage.getItem('cyberSafeAllChatMessages');
+    return allChats ? JSON.parse(allChats) : {};
   } catch (error) {
-    console.error(`Error reading chat messages for ${chatId} from database:`, error);
-    return [];
+    console.error("Error reading all chats from localStorage:", error);
+    return {};
   }
 };
 
-export const addChatMessage = async (
-  chatId: string,
-  messageData: Omit<ChatMessage, 'chatId'>
-): Promise<ChatMessage | null> => {
+// Helper to save all chat messages to localStorage
+const saveAllChats = (allChats: Record<string, ChatMessage[]>) => {
+  if (typeof window === 'undefined') return;
   try {
-    const newMessage = await prisma.chatMessage.create({
-      data: {
-        ...messageData,
-        chatId,
-        // Ensure timestamp is a Date object if your schema expects it
-        timestamp: new Date(messageData.timestamp),
-      },
-    });
-    // Map Prisma model to ChatMessage type if necessary
-    return newMessage;
+    localStorage.setItem('cyberSafeAllChatMessages', JSON.stringify(allChats));
   } catch (error) {
-    console.error(`Error saving chat message for ${chatId} to database:`, error);
-    return null;
+    console.error("Error saving all chats to localStorage:", error);
+  }
+};
+
+export const getChatMessages = (chatId: string): ChatMessage[] => {
+  const allChats = getAllChats();
+  return allChats[chatId] || [];
+};
+
+export const addChatMessage = (
+  chatId: string,
+  message: ChatMessage // Expect the full ChatMessage object, assuming ID is handled by caller or API
+): void => {
+  const allChats = getAllChats();
+  if (!allChats[chatId]) {
+    allChats[chatId] = [];
+  }
+  
+  // Ensure message ID consistency; server-generated ID should be preferred.
+  // If somehow a message arrives without an ID (e.g. purely local simulation before API call), generate one.
+  const messageToStore: ChatMessage = {
+    ...message,
+    id: message.id || `local-msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+  };
+
+  // Avoid duplicates if messages are added both optimistically and from API response
+  const messageExists = allChats[chatId].some(m => m.id === messageToStore.id);
+  if (!messageExists) {
+    allChats[chatId].push(messageToStore);
+    saveAllChats(allChats);
+  } else {
+    // If message with same ID exists, update it (e.g., if server confirmed a timestamp)
+    allChats[chatId] = allChats[chatId].map(m => m.id === messageToStore.id ? messageToStore : m);
+    saveAllChats(allChats);
   }
 };
