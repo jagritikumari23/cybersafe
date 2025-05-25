@@ -1,4 +1,3 @@
-
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -59,14 +58,18 @@ export default function CyberRiskForm() {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: questions.reduce((acc, q) => ({ ...acc, [q.id]: '' }), {}),
+    mode: 'onChange', // Important for enabling submit button based on form.formState.isValid
   });
 
-  const onSubmit = async (data: FormValues) => {
-    if (currentQuestionIndex < questions.length - 1) {
+  const handleNextQuestion = async () => {
+    const currentFieldId = questions[currentQuestionIndex].id as any;
+    const isValid = await form.trigger(currentFieldId); // Validate current field
+    if (isValid && currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
-      return;
     }
-
+  };
+  
+  const onFinalSubmit = async (data: FormValues) => {
     setIsSubmitting(true);
     setAssessmentResult(null);
     try {
@@ -98,6 +101,8 @@ export default function CyberRiskForm() {
   
   const progress = Math.round(((currentQuestionIndex + 1) / questions.length) * 100);
   const currentQuestion = questions[currentQuestionIndex];
+  const isLastQuestion = currentQuestionIndex === questions.length - 1;
+
 
   if (assessmentResult) {
     const scoreColor = assessmentResult.score <= 33 ? 'text-green-500' : assessmentResult.score <= 66 ? 'text-yellow-500' : 'text-red-500';
@@ -151,7 +156,8 @@ export default function CyberRiskForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          {/* The form element now uses form.handleSubmit for the final submission */}
+          <form onSubmit={form.handleSubmit(onFinalSubmit)} className="space-y-8">
             <div key={currentQuestion.id} className="space-y-4 p-1">
                 <FormLabel className="text-lg font-semibold text-foreground">{currentQuestion.text}</FormLabel>
                 <FormField
@@ -163,7 +169,7 @@ export default function CyberRiskForm() {
                         {currentQuestion.answerType === 'radio' ? (
                             <RadioGroup
                             onValueChange={field.onChange}
-                            value={field.value} // Changed from defaultValue
+                            value={field.value}
                             className="flex flex-col space-y-2"
                             >
                             {currentQuestion.options.map(option => (
@@ -176,7 +182,7 @@ export default function CyberRiskForm() {
                             ))}
                             </RadioGroup>
                         ) : (
-                            <Select onValueChange={field.onChange} value={field.value}> {/* Changed from defaultValue */}
+                            <Select onValueChange={field.onChange} value={field.value}>
                             <SelectTrigger>
                                 <SelectValue placeholder="Select an option" />
                             </SelectTrigger>
@@ -197,10 +203,26 @@ export default function CyberRiskForm() {
                 <Button type="button" variant="outline" onClick={handleBack} disabled={currentQuestionIndex === 0 || isSubmitting}>
                     Back
                 </Button>
-                <Button type="submit" disabled={isSubmitting || !form.watch(currentQuestion.id as any)} className="min-w-[120px]">
-                    {isSubmitting && currentQuestionIndex === questions.length -1 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    {currentQuestionIndex === questions.length - 1 ? (isSubmitting ? 'Calculating...' : 'Get My Score') : 'Next Question'}
-                </Button>
+
+                {isLastQuestion ? (
+                  <Button
+                    type="submit" // This will trigger form.handleSubmit(onFinalSubmit)
+                    disabled={isSubmitting || !form.formState.isValid} // Check overall form validity
+                    className="min-w-[120px]"
+                  >
+                    {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    {isSubmitting ? 'Calculating...' : 'Get My Score'}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={handleNextQuestion}
+                    disabled={!form.watch(currentQuestion.id as any) || isSubmitting } // Check current field for "Next"
+                    className="min-w-[120px]"
+                  >
+                    Next Question
+                  </Button>
+                )}
             </CardFooter>
           </form>
         </Form>
@@ -208,4 +230,3 @@ export default function CyberRiskForm() {
     </Card>
   );
 }
-
