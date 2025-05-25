@@ -1,6 +1,16 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
-import type { Report, ReportType, SuspectDetails, IncidentLocation, EvidenceFile, AITriageCategory, AITriageUrgency, EscalationTarget, ReportStatus } from '@/lib/types';
+import { 
+  ReportType, 
+  AITriageUrgency, 
+  ReportStatus,
+  type Report,
+  type SuspectDetails, 
+  type IncidentLocation, 
+  type EvidenceFile, 
+  type AITriageCategory, 
+  type EscalationTarget 
+} from '@/lib/types';
 import { translateText, type TranslateTextInput } from '@/ai/flows/translate-text-flow';
 import { autoTriage, type AutoTriageInput } from '@/ai/flows/auto-triage';
 import { suggestEscalation, type SuggestEscalationInput } from '@/ai/flows/suggest-escalation-flow';
@@ -91,8 +101,8 @@ export async function POST(request: NextRequest) {
     };
     const triageResult = await autoTriage(triageInput);
     currentReport.aiTriage = {
-      category: triageResult.category as AITriageCategory | string,
-      urgency: triageResult.urgency as AITriageUrgency | string,
+      category: triageResult.category as AITriageCategory | string, // Cast to string as AI output might not strictly be enum
+      urgency: triageResult.urgency as AITriageUrgency | string,   // Cast to string
       summary: triageResult.summary,
     };
     currentReport.status = ReportStatus.AI_TRIAGE_COMPLETED;
@@ -109,7 +119,7 @@ export async function POST(request: NextRequest) {
     }
     let locationInfoForAI = "Location not specified or not relevant.";
     if (currentReport.incidentLocation && currentReport.incidentLocation.type !== 'not_provided') {
-      locationInfoForAI = `Incident location: ${currentReport.incidentLocation.details}.`;
+      locationInfoForAI = `Incident location: ${currentReport.incidentLocation.details || [currentReport.incidentLocation.city, currentReport.incidentLocation.state, currentReport.incidentLocation.country].filter(Boolean).join(', ')}.`;
     }
 
     const escalationInput: SuggestEscalationInput = {
@@ -123,7 +133,7 @@ export async function POST(request: NextRequest) {
     };
     const escalationResult = await suggestEscalation(escalationInput);
     currentReport.aiEscalation = {
-      target: escalationResult.suggestedTarget as EscalationTarget | string,
+      target: escalationResult.suggestedTarget as EscalationTarget | string, // Cast to string
       reasoning: escalationResult.reasoning,
     };
     currentReport.status = ReportStatus.ESCALATION_SUGGESTION_COMPLETED;
@@ -142,11 +152,16 @@ export async function POST(request: NextRequest) {
       currentReport.timelineNotes += ` Fraud Pattern Analysis: ${fraudPatternResult.detected ? `Detected (${fraudPatternResult.details})` : 'No specific patterns detected.'}`;
     } else {
       currentReport.fraudPatternInfo = { detected: false, details: "No suspect information provided for pattern analysis." };
-      currentReport.status = ReportStatus.FRAUD_PATTERN_ANALYSIS_COMPLETED;
+      currentReport.status = ReportStatus.FRAUD_PATTERN_ANALYSIS_COMPLETED; // Still mark as completed even if skipped
     }
     
     // 5. Final Status, Officer Assignment, Chat ID
-    if (currentReport.aiTriage.urgency === AITriageUrgency.HIGH || currentReport.aiTriage.urgency === AITriageUrgency.MEDIUM) {
+    // Check against string literal from AI, or actual enum value if AI output is guaranteed to be one of enum values.
+    // For safety, comparing with string literals if AI output might not strictly map to enum keys.
+    // Or better, ensure AI output schema for triageResult.urgency is strictly the enum values.
+    // Assuming triageResult.urgency is a string like 'High', 'Medium', 'Low' from AI.
+    const urgencyString = currentReport.aiTriage.urgency.toString().toLowerCase();
+    if (urgencyString === AITriageUrgency.HIGH.toLowerCase() || urgencyString === AITriageUrgency.MEDIUM.toLowerCase()) {
       currentReport.assignedOfficerName = "Officer K (System Assigned)";
       currentReport.chatId = `chat_${reportId}`;
       currentReport.status = ReportStatus.OFFICER_ASSIGNED;
