@@ -163,7 +163,7 @@ export default function CyberRiskForm() {
                         {currentQuestion.answerType === 'radio' ? (
                             <RadioGroup
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
+                            value={field.value} // Changed from defaultValue
                             className="flex flex-col space-y-2"
                             >
                             {currentQuestion.options.map(option => (
@@ -176,7 +176,7 @@ export default function CyberRiskForm() {
                             ))}
                             </RadioGroup>
                         ) : (
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <Select onValueChange={field.onChange} value={field.value}> {/* Changed from defaultValue */}
                             <SelectTrigger>
                                 <SelectValue placeholder="Select an option" />
                             </SelectTrigger>
@@ -208,3 +208,4 @@ export default function CyberRiskForm() {
     </Card>
   );
 }
+
