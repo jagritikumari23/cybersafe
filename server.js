@@ -1,3 +1,82 @@
+<<<<<<< HEAD
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const morgan = require('morgan');
+const { z } = require('zod');
+const dotenv = require('dotenv');
+const admin = require('firebase-admin');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { initializeDatabases, pgPool } = require('./config/database');
+const { authenticateUser, authorizeRole } = require('./middleware/auth');
+
+// Load environment variables
+dotenv.config();
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Middleware
+app.use(helmet());
+app.use(cors({
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json());
+app.use(morgan('dev'));
+
+// Rate limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100
+});
+app.use(limiter);
+
+// Initialize Firebase Admin SDK
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+        console.log('Firebase Admin SDK initialized');
+    } catch (error) {
+        console.error('Firebase initialization error:', error);
+    }
+}
+
+// Initialize Google Generative AI
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+// Input validation schemas
+const reportSchema = z.object({
+    type: z.string().min(1),
+    description: z.string().min(10),
+    incidentDate: z.string().datetime(),
+    reporterName: z.string().min(1),
+    reporterContact: z.string().email(),
+    suspectDetails: z.object({}).optional(),
+    incidentLocation: z.object({}).optional(),
+    additionalEvidenceText: z.string().optional(),
+    evidenceFiles: z.array(z.object({})).optional()
+});
+
+// Error handling middleware
+const errorHandler = (err, req, res, next) => {
+    console.error(err.stack);
+    res.status(err.status || 500).json({
+        error: {
+            message: err.message || 'Internal Server Error',
+            status: err.status || 500
+        }
+    });
+};
+
+// Routes
+=======
 
 const express = require('express');
 const { Client } = require('pg');
@@ -95,10 +174,18 @@ client
 
 app.use(cors());
 
+>>>>>>> 73b36b58779457292a121e59d2b86d4df8326aae
 app.get('/', (req, res) => {
   res.send('CyberSafe Backend is running!');
 });
 
+<<<<<<< HEAD
+// API route to submit a new complaint
+app.post('/api/complaints/submit', authenticateUser, async (req, res) => {
+    try {
+        const reportData = reportSchema.parse(req.body);
+        const reportId = `SRV-${Date.now()}`;
+=======
 // API route for user registration (Placeholder)
 app.post('/api/register', (req, res) => {
   // Placeholder for user registration logic
@@ -121,6 +208,7 @@ app.post('/api/complaints/submit', async (req, res) => {
   }
 
   const reportId = `SRV-${Date.now()}`; // Simple server-generated ID
+>>>>>>> 73b36b58779457292a121e59d2b86d4df8326aae
   const submissionDate = new Date().toISOString();
   const initialStatus = 'Filed';
 
@@ -129,6 +217,34 @@ app.post('/api/complaints/submit', async (req, res) => {
     ...reportData,
     submissionDate,
     status: initialStatus,
+<<<<<<< HEAD
+        };
+
+        const queryText = `
+            INSERT INTO reports(id, type, description, incident_date, reporter_name, reporter_contact, status, submission_date, suspect_details, incident_location, additional_evidence_text, evidence_files_metadata)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING *;
+        `;
+
+        const values = [
+            newReport.id, newReport.type, newReport.description, newReport.incidentDate,
+            newReport.reporterName, newReport.reporterContact, newReport.status, newReport.submissionDate,
+            newReport.suspectDetails ? JSON.stringify(newReport.suspectDetails) : null,
+            newReport.incidentLocation ? JSON.stringify(newReport.incidentLocation) : null,
+            newReport.additionalEvidenceText,
+            newReport.evidenceFiles ? JSON.stringify(newReport.evidenceFiles) : null,
+        ];
+
+        const result = await pgPool.query(queryText, values);
+        res.status(201).json(result.rows[0]);
+  } catch (error) {
+        if (error instanceof z.ZodError) {
+            res.status(400).json({ error: 'Invalid input data', details: error.errors });
+        } else {
+    console.error('Error submitting complaint:', error);
+            res.status(500).json({ error: 'Error submitting complaint', details: error.message });
+        }
+=======
     // Other fields like AI triage results would be added after AI processing steps
   };
 
@@ -166,10 +282,27 @@ app.post('/api/complaints/submit', async (req, res) => {
   } catch (error) {
     console.error('Error submitting complaint:', error);
     res.status(500).json({ error: 'Error submitting complaint.', details: error.message });
+>>>>>>> 73b36b58779457292a121e59d2b86d4df8326aae
   }
 });
 
 // API route to get the status of a specific complaint
+<<<<<<< HEAD
+app.get('/api/complaints/:id/status', authenticateUser, async (req, res) => {
+    try {
+  const { id: reportId } = req.params;
+        const queryText = 'SELECT id, status, timeline_notes FROM reports WHERE id = $1;';
+        const result = await pgPool.query(queryText, [reportId]);
+
+        if (result.rows.length > 0) {
+            res.status(200).json(result.rows[0]);
+    } else {
+            res.status(404).json({ error: 'Report not found' });
+    }
+  } catch (error) {
+        console.error('Error fetching complaint status:', error);
+        res.status(500).json({ error: 'Error fetching complaint status', details: error.message });
+=======
 app.get('/api/complaints/:id/status', async (req, res) => {
   const { id: reportId } = req.params;
   try {
@@ -192,15 +325,38 @@ app.get('/api/complaints/:id/status', async (req, res) => {
   } catch (error) {
     console.error(`Error fetching status for complaint ${reportId}:`, error);
     res.status(500).json({ error: 'Error fetching complaint status.', details: error.message });
+>>>>>>> 73b36b58779457292a121e59d2b86d4df8326aae
   }
 });
 
 // API route to add a message to a complaint chat
+<<<<<<< HEAD
+app.post('/api/complaints/:id/chat', authenticateUser, async (req, res) => {
+    try {
+=======
 app.post('/api/complaints/:id/chat', async (req, res) => {
+>>>>>>> 73b36b58779457292a121e59d2b86d4df8326aae
   const { id: reportId } = req.params;
   const { sender, text } = req.body;
 
   if (!sender || !text) {
+<<<<<<< HEAD
+            return res.status(400).json({ error: 'Missing sender or text for chat message' });
+  }
+
+        const queryText = `
+            INSERT INTO chat_messages(report_id, sender, text, timestamp)
+            VALUES($1, $2, $3, $4)
+            RETURNING *;
+        `;
+
+        const values = [reportId, sender, text, new Date().toISOString()];
+        const result = await pgPool.query(queryText, values);
+        res.status(201).json(result.rows[0]);
+  } catch (error) {
+        console.error('Error adding chat message:', error);
+        res.status(500).json({ error: 'Error adding chat message', details: error.message });
+=======
     return res.status(400).json({ error: 'Missing sender or text for chat message.' });
   }
 
@@ -236,10 +392,25 @@ app.post('/api/complaints/:id/chat', async (req, res) => {
   } catch (error) {
     console.error(`Error adding chat message for complaint ${reportId}:`, error);
     res.status(500).json({ error: 'Error adding chat message.', details: error.message });
+>>>>>>> 73b36b58779457292a121e59d2b86d4df8326aae
   }
 });
 
 // API route to get chat messages for a specific complaint
+<<<<<<< HEAD
+app.get('/api/complaints/:id/chat/messages', authenticateUser, async (req, res) => {
+    try {
+  const { id: reportId } = req.params;
+        const queryText = 'SELECT message_id, sender, text, timestamp FROM chat_messages WHERE report_id = $1 ORDER BY timestamp ASC;';
+        const result = await pgPool.query(queryText, [reportId]);
+        res.status(200).json(result.rows);
+  } catch (error) {
+        console.error('Error fetching chat messages:', error);
+        res.status(500).json({ error: 'Error fetching chat messages', details: error.message });
+  }
+});
+
+=======
 app.get('/api/complaints/:id/chat/messages', async (req, res) => {
   const { id: reportId } = req.params;
   try {
@@ -259,6 +430,7 @@ app.get('/api/complaints/:id/chat/messages', async (req, res) => {
 });
 
 
+>>>>>>> 73b36b58779457292a121e59d2b86d4df8326aae
 // API route to upload evidence (Placeholder - needs file handling)
 app.post('/api/upload/evidence', (req, res) => {
   // Placeholder for evidence upload logic.
@@ -309,9 +481,29 @@ app.post('/api/voice-to-text', (req, res) => {
 //   }
 // });
 
+<<<<<<< HEAD
+// Add error handling middleware
+app.use(errorHandler);
+
+// Start server
+const startServer = async () => {
+    try {
+        await initializeDatabases();
+app.listen(port, () => {
+            console.log(`Server is running on port ${port}`);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
+    }
+};
+
+startServer();
+=======
 app.listen(port, () => {
   console.log(`Express server listening on port ${port}`);
   console.log('This server provides conceptual backend routes. The Next.js app uses its own API routes for current functionality.');
 });
+>>>>>>> 73b36b58779457292a121e59d2b86d4df8326aae
 
     
