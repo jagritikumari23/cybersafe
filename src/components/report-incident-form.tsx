@@ -182,7 +182,7 @@ export default function ReportIncidentForm() {
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
-      toast({ title: 'Location Not Supported', description: 'Geolocation is not supported by your browser. Please enter manually.', variant: 'warning' });
+      toast({ title: 'Location Not Supported', description: 'Geolocation is not supported by your browser. Please enter manually.', variant: 'default' });
       form.setValue('locationType', 'manual');
     }
   };
@@ -198,6 +198,7 @@ export default function ReportIncidentForm() {
 
   async function onSubmit(data: ReportFormValues) {
     setIsSubmitting(true);
+    console.log('Form data being submitted:', JSON.stringify(data, null, 2)); // Log form data
 
     let incidentLocationPayload: IncidentLocation;
     if (data.locationType === 'auto' && autoLocation) {
@@ -223,12 +224,12 @@ export default function ReportIncidentForm() {
     }
     
     const suspectDetailsPayload: SuspectDetails = {
-        phone: data.suspectPhone,
-        email: data.suspectEmail,
-        ipAddress: data.suspectIpAddress,
-        website: data.suspectWebsite,
-        bankAccount: data.suspectBankAccount,
-        otherInfo: data.suspectOtherInfo,
+      phone: data.suspectPhone,
+      email: data.suspectEmail,
+      ipAddress: data.suspectIpAddress,
+      website: data.suspectWebsite,
+      bankAccount: data.suspectBankAccount,
+      otherInfo: data.suspectOtherInfo,
     };
 
     // We send `selectedFilesData` which contains name, type, size.
@@ -237,17 +238,24 @@ export default function ReportIncidentForm() {
       type: data.type,
       originalDescriptionLanguage: data.originalDescriptionLanguage,
       description: data.description,
-      incidentDate: data.incidentDate.toISOString(), // Ensure date is ISO string
+      incidentDate: data.incidentDate?.toISOString(), // Make optional with ? to prevent errors
       reporterName: data.reporterName,
       reporterContact: data.reporterContact,
-      suspectDetails: Object.values(suspectDetailsPayload).some(val => String(val).trim()) ? suspectDetailsPayload : undefined,
+      suspectDetails: Object.values(suspectDetailsPayload).some(val => val && String(val).trim()) ? suspectDetailsPayload : undefined,
       incidentLocation: incidentLocationPayload,
       additionalEvidenceText: data.additionalEvidenceText,
       evidenceFiles: selectedFilesData, // Sending metadata
     };
 
+    console.log('Prepared report payload:', JSON.stringify(reportPayload, null, 2));
+
     try {
-      toast({ title: 'Submitting Report...', description: 'Please wait while we process your report.', duration: 3000 });
+      toast({ 
+        title: 'Submitting Report...', 
+        description: 'Please wait while we process your report.', 
+        duration: 3000 
+      });
+      
       const response = await fetch('/api/reports', {
         method: 'POST',
         headers: {
@@ -256,12 +264,31 @@ export default function ReportIncidentForm() {
         body: JSON.stringify(reportPayload),
       });
 
+      console.log('Response status:', response.status); // Log response status
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({error: "Server error during submission."}));
-        throw new Error(errorData.details || errorData.error || `Server responded with ${response.status}`);
+        const errorData = await response.json().catch(() => ({
+          error: 'Failed to parse error response',
+          status: response.status,
+          statusText: response.statusText
+        }));
+        
+        console.error('Server error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData,
+          headers: Object.fromEntries(response.headers.entries())
+        });
+        
+        throw new Error(
+          errorData.details || 
+          errorData.error || 
+          `Server responded with ${response.status}: ${response.statusText}`
+        );
       }
 
       const submittedReport: Report = await response.json();
+      console.log('Report submitted successfully:', submittedReport);
 
       toast({
         title: 'Report Submitted Successfully!',
@@ -270,18 +297,28 @@ export default function ReportIncidentForm() {
         duration: 8000,
       });
       
+      // Reset form state
       form.reset();
       setSelectedFilesData([]);
       setActualFiles([]);
       setAutoLocation(null);
+      
+      // Navigate to track report page
       router.push(`/track-report?id=${submittedReport.id}`);
 
-    } catch (error) {
-      console.error('Error submitting report:', error);
+    } catch (error: any) {
+      console.error('Error details:', {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        formData: data // Log form data that caused the error
+      });
+      
       toast({
         title: 'Submission Error',
-        description: (error instanceof Error ? error.message : 'An unknown error occurred. Please try again.'),
+        description: `An error occurred: ${error?.message || 'Please check the console for details.'}`,
         variant: 'destructive',
+        duration: 10000, // Longer duration for error messages
       });
     } finally {
       setIsSubmitting(false);

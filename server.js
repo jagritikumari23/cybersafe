@@ -4,9 +4,8 @@ const { Client } = require('pg');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const admin = require('firebase-admin');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const app = express();
-app.use(express.json()); // Add this line to parse JSON request bodies
+app.use(express.json()); // Parse JSON request bodies
 const port = 3000;
 
 // Database connection details - replace with your actual credentials
@@ -87,10 +86,6 @@ client
 // admin.initializeApp({
 //   credential: admin.credential.cert(serviceAccount)
 // });
-
-// Initialize Google Generative AI client
-// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY'); // Placeholder
-// const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }); // Example model
 
 
 app.use(cors());
@@ -295,23 +290,10 @@ app.post('/api/voice-to-text', (req, res) => {
   res.status(501).send('Voice-to-text route placeholder - Not Implemented');
 });
 
-// Gemini API example (can be part of a specific flow if needed, or a direct utility)
-// app.get('/api/generate-text', async (req, res) => {
-//   try {
-//     const prompt = 'Write a short, catchy slogan for a cyber security awareness campaign.'; // Example prompt
-//     const result = await model.generateContent(prompt);
-//     const response = result.response;
-//     const text = response.text();
-//     res.status(200).send(text);
-//   } catch (error) {
-//     console.error('Error generating text with Gemini API:', error);
-//     res.status(500).send('Error generating text.');
-//   }
-// });
+// Text generation functionality removed - using Firebase only
 
 app.listen(port, () => {
   console.log(`Express server listening on port ${port}`);
   console.log('This server provides conceptual backend routes. The Next.js app uses its own API routes for current functionality.');
 });
-
     

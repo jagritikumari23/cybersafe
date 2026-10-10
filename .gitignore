@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+/temp
 
 # debug
 npm-debug.log*
@@ -39,6 +40,7 @@ next-env.d.ts
 
 .genkit/*
 .env*
+!.env.example
 
 # firebase
 firebase-debug.log

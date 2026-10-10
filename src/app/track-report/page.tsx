@@ -10,7 +10,7 @@ import type { Report } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'; // Added CardFooter
-import { FileSearch, Info, Loader2 } from 'lucide-react';
+import { FileSearch, Info, Loader2, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils'; // cn was missing

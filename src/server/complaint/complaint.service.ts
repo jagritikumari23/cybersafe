@@ -8,10 +8,17 @@
  * This service would interact with a database to store and retrieve complaint data.
  */
 
-import { PrismaClient } from '@prisma/client';
-import type { Report, ReportStatus } from '@/lib/types';
+import { ReportStatus, type Report } from '@/lib/types';
 
-const prisma = new PrismaClient();
+// Mock client interface for placeholder service
+const prisma: any = {
+  report: {
+    create: async ({ data }: any) => ({ id: 'mock-report-id', ...data }),
+    findUnique: async () => null,
+    update: async ({ data }: any) => ({ ...data }),
+    findMany: async () => [],
+  },
+};
 
 export class ComplaintService {
   constructor() {

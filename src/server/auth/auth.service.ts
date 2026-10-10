@@ -8,7 +8,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { app } from '@/lib/firebase/firebase-app'; // Assuming you have a firebase-app.ts file
+import { app } from '@/lib/firebase/config';
 
 /**
  * @fileOverview Placeholder for an authentication and user management service.

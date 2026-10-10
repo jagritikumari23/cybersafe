@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { ChatMessage, Report } from '@/lib/types';
-import { addChatMessage } from '@/lib/chat-store.ts';
+import { addChatMessage } from '@/lib/chat-store';
 // Removed: import { getReportByIdFromStorage } from '@/lib/report-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

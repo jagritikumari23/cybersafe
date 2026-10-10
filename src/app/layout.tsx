@@ -21,6 +21,8 @@ export const metadata: Metadata = {
   description: 'Report cybercrime incidents securely and track their status. Your safety is our priority.',
 };
 
+import { AuthProvider } from '@/contexts/AuthContext';
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,18 +31,20 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <SidebarProvider>
-          <Sidebar>
-            <SidebarNav />
-          </Sidebar>
-          <SidebarInset>
-            <AppHeader />
-            <main className="flex-1 p-4 md:p-6 lg:p-8">
-              {children}
-            </main>
-          </SidebarInset>
-        </SidebarProvider>
-        <Toaster />
+        <AuthProvider>
+          <SidebarProvider>
+            <Sidebar>
+              <SidebarNav />
+            </Sidebar>
+            <SidebarInset>
+              <AppHeader />
+              <main className="flex-1 p-4 md:p-6 lg:p-8">
+                {children}
+              </main>
+            </SidebarInset>
+          </SidebarProvider>
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   );

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # CyberSafe: Cybersecurity Incident Reporting and Risk Assessment Application
 
 ## Description
