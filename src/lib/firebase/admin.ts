@@ -3,12 +3,27 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { getStorage, type Storage } from 'firebase-admin/storage';
 import { getAuth, type Auth } from 'firebase-admin/auth';
 
+function parseServiceAccount(raw: any) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    try {
+      const cleaned = raw.startsWith('"') && raw.endsWith('"') ? JSON.parse(raw) : raw;
+      return typeof cleaned === 'string' ? JSON.parse(cleaned) : cleaned;
+    } catch {
+      return null;
+    }
+  }
+}
+
 let adminApp;
 if (!getApps().length) {
   try {
     const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-    if (rawKey) {
-      const serviceAccount = typeof rawKey === 'string' ? JSON.parse(rawKey) : rawKey;
+    const serviceAccount = parseServiceAccount(rawKey);
+    if (serviceAccount && serviceAccount.project_id) {
       adminApp = initializeApp({
         credential: cert(serviceAccount),
         storageBucket: `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'cybersafe-9dxv1'}.firebasestorage.app`
