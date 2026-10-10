@@ -39,7 +39,14 @@ export async function POST(request: NextRequest) {
     await reportRef.set(report);
     return NextResponse.json(report, { status: 201 });
   } catch (error) {
-    console.error('Error creating report:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('Error creating report:', errorMessage);
+    if (errorMessage.toLowerCase().includes('could not load the default credentials')) {
+      return NextResponse.json(
+        { error: 'Firebase Admin credentials are unavailable. Configure FIREBASE_SERVICE_ACCOUNT_KEY or Application Default Credentials.' },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: 'Failed to save the report.' }, { status: 500 });
   }
 }

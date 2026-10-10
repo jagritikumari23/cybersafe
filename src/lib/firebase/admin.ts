@@ -52,14 +52,6 @@ if (adminApp) {
   } catch (error) {
     console.error('Firebase Firestore initialization error:', error);
   }
-
-  if (adminDb) {
-    try {
-      adminDb.settings({ ignoreUndefinedProperties: true });
-    } catch (error) {
-      console.warn('Firebase Firestore settings were already configured:', error);
-    }
-  }
 }
 
 try {
