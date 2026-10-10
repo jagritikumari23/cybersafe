@@ -1,4 +1,5 @@
 import { getApps, cert, initializeApp, getApp } from 'firebase-admin/app';
+import type { App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { getStorage, type Storage } from 'firebase-admin/storage';
 import { getAuth, type Auth } from 'firebase-admin/auth';
@@ -18,7 +19,7 @@ function parseServiceAccount(raw: any) {
   }
 }
 
-let adminApp;
+let adminApp: App | undefined;
 if (!getApps().length) {
   try {
     const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
@@ -41,17 +42,24 @@ if (!getApps().length) {
   adminApp = getApp();
 }
 
-let adminDb: Firestore;
+let adminDb: Firestore | null = null;
 let adminStorage: Storage;
 let adminAuth: Auth;
 
-try {
-  adminDb = getFirestore(adminApp);
-  adminDb.settings({
-    ignoreUndefinedProperties: true,
-  });
-} catch (e) {
-  adminDb = null as any;
+if (adminApp) {
+  try {
+    adminDb = getFirestore(adminApp);
+  } catch (error) {
+    console.error('Firebase Firestore initialization error:', error);
+  }
+
+  if (adminDb) {
+    try {
+      adminDb.settings({ ignoreUndefinedProperties: true });
+    } catch (error) {
+      console.warn('Firebase Firestore settings were already configured:', error);
+    }
+  }
 }
 
 try {
