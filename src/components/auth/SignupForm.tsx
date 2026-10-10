@@ -12,6 +12,7 @@ export function SignupForm() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const { signup } = useAuth();
   const router = useRouter();
 
@@ -22,8 +23,12 @@ export function SignupForm() {
     }
 
     try {
-      await signup(email, password);
-      router.push('/dashboard');
+      const hasSession = await signup(email, password);
+      if (hasSession) {
+        router.push('/dashboard');
+      } else {
+        setMessage('Account created. Check your email to confirm your account before signing in.');
+      }
     } catch (error: any) {
       setError(error.message || 'Failed to create an account');
     }
@@ -37,6 +42,7 @@ export function SignupForm() {
       </div>
 
       {error && <div className="text-red-500 text-sm text-center p-2 bg-red-50 rounded">{error}</div>}
+      {message && <div role="status" className="text-green-700 text-sm text-center p-2 bg-green-50 rounded">{message}</div>}
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <div className="space-y-2">

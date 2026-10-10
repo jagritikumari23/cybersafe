@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getIncidents } from '@/lib/firebase/firestore';
+import type { Report } from '@/lib/types';
 import { Incident } from '@/lib/types/incident';
 
 export default function IncidentsList() {
@@ -12,9 +12,19 @@ export default function IncidentsList() {
   useEffect(() => {
     const fetchIncidents = async () => {
       try {
-        const data = await getIncidents();
-        // Type assertion since Firestore returns 'any' type
-        setIncidents(data as unknown as Incident[]);
+        const response = await fetch('/api/reports');
+        const reports = await response.json();
+        if (!response.ok) throw new Error(reports.error || 'Failed to fetch reports.');
+        setIncidents((reports as Report[]).map((report): Incident => ({
+          id: report.id,
+          title: report.type,
+          description: report.description,
+          category: report.aiTriage?.category || report.type,
+          severity: report.aiTriage?.urgency?.toLowerCase() === 'high' ? 'high' : 'medium',
+          status: report.status === 'Case Closed' ? 'resolved' : 'in_review',
+          userId: '',
+          createdAt: report.submissionDate,
+        })));
         setError(null);
       } catch (err) {
         console.error('Failed to fetch incidents:', err);

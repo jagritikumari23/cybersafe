@@ -3,7 +3,6 @@ const express = require('express');
 const { Client } = require('pg');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const admin = require('firebase-admin');
 const app = express();
 app.use(express.json()); // Parse JSON request bodies
 const port = 3000;
@@ -80,14 +79,6 @@ client
     console.error('Error connecting to PostgreSQL database:', err, "\nFalling back to in-memory store for this session.");
   });
 
-// Initialize Firebase Admin SDK (if still needed for other purposes, e.g. Auth)
-// Replace 'path/to/your/serviceAccountKey.json' with the actual path to your service account key file
-// const serviceAccount = require('path/to/your/serviceAccountKey.json'); // Placeholder
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount)
-// });
-
-
 app.use(cors());
 
 app.get('/', (req, res) => {
@@ -97,7 +88,7 @@ app.get('/', (req, res) => {
 // API route for user registration (Placeholder)
 app.post('/api/register', (req, res) => {
   // Placeholder for user registration logic
-  // Would interact with Firebase Auth or a users table in PostgreSQL
+  // Would interact with Supabase Auth or a users table.
   res.status(501).send('Register route placeholder - Not Implemented');
 });
 
@@ -258,7 +249,7 @@ app.get('/api/complaints/:id/chat/messages', async (req, res) => {
 app.post('/api/upload/evidence', (req, res) => {
   // Placeholder for evidence upload logic.
   // This would typically involve a multipart/form-data parser (e.g., multer)
-  // and saving files to a filesystem or cloud storage (AWS S3, Firebase Storage).
+  // and saving files to a filesystem or cloud storage (such as Supabase Storage).
   console.log('Evidence upload route hit. Body:', req.body); // Log to see what's received
   res.status(501).send('Evidence upload placeholder - Not Implemented with file handling.');
 });
@@ -289,8 +280,6 @@ app.post('/api/translate', async (req, res) => {
 app.post('/api/voice-to-text', (req, res) => {
   res.status(501).send('Voice-to-text route placeholder - Not Implemented');
 });
-
-// Text generation functionality removed - using Firebase only
 
 app.listen(port, () => {
   console.log(`Express server listening on port ${port}`);

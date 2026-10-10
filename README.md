@@ -37,13 +37,17 @@ The CyberSafe application is designed to guide users through the process of repo
 
 *   **Frontend:** Next.js, React, Tailwind CSS, Shadcn UI
 *   **Backend:** Node.js, Express.js (or similar)
-*   **Database:** (Specify database if used, e.g., PostgreSQL, MongoDB, Firebase)
+*   **Database and authentication:** Supabase
 *   **AI/ML:** Genkit, potentially integrating with models like Gemini
 *   **Other:** TypeScript
 
 ## Getting Started
 
 ### Setup Instructions
+
+1. Copy `.env.example` to `.env.local` and set the Supabase project URL, anon key, and service-role key. Keep the service-role key server-side and out of source control.
+2. Run `supabase/schema.sql` in the Supabase SQL Editor to create the reports table.
+3. In Supabase Authentication settings, enable email/password and Google if Google sign-in is needed. Add the app's local and deployed URLs to the allowed redirect URLs.
 
 
 ### Prerequisites

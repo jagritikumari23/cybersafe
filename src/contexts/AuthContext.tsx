@@ -2,22 +2,13 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { 
-  User, 
-  getAuth, 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut 
-} from 'firebase/auth';
-import { auth } from '@/lib/firebase/config';
+import type { User } from '@supabase/supabase-js';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 interface AuthContextType {
   currentUser: User | null;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string) => Promise<boolean>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
@@ -38,49 +29,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const login = async (email: string, password: string) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
-    }
+    const { error } = await getSupabaseBrowserClient().auth.signInWithPassword({ email, password });
+    if (error) throw error;
   };
 
   const signup = async (email: string, password: string) => {
-    try {
-      await createUserWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-      console.error('Signup error:', error);
-      throw error;
-    }
+    const { data, error } = await getSupabaseBrowserClient().auth.signUp({ email, password });
+    if (error) throw error;
+    return Boolean(data.session);
   };
 
   const loginWithGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error('Google login error:', error);
-      throw error;
-    }
+    const { error } = await getSupabaseBrowserClient().auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (error) throw error;
   };
 
   const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error('Logout error:', error);
-      throw error;
-    }
+    const { error } = await getSupabaseBrowserClient().auth.signOut();
+    if (error) throw error;
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
+    let subscription: { unsubscribe: () => void } | undefined;
+    try {
+      const supabase = getSupabaseBrowserClient();
+      supabase.auth.getUser().then(({ data, error }) => {
+        if (error) console.error('Unable to restore Supabase session:', error.message);
+        setCurrentUser(data.user);
+        setLoading(false);
+      });
+      ({ data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setCurrentUser(session?.user ?? null);
+        setLoading(false);
+      }));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : 'Supabase is not configured.');
       setLoading(false);
-    });
+    }
 
-    return () => unsubscribe();
+    return () => subscription?.unsubscribe();
   }, []);
 
   const value = {

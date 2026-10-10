@@ -1,42 +1,33 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, onSnapshot, limit, DocumentData } from 'firebase/firestore';
-import { db } from '@/lib/types/firebase';
-import { Incident } from '@/lib/types/incident';
+import type { Report } from '@/lib/types';
 
 export function useReports(status: string | null = null, limitCount: number = 10) {
-  const [reports, setReports] = useState<Incident[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    let q = query(
-      collection(db, 'reports'),
-      orderBy('submissionDate', 'desc'),
-      limit(limitCount)
-    );
+    const controller = new AbortController();
+    const searchParams = new URLSearchParams({ limit: String(limitCount) });
+    if (status) searchParams.set('status', status);
 
-    if (status) {
-      q = query(q, where('status', '==', status));
-    }
+    setLoading(true);
+    setError(null);
+    fetch(`/api/reports?${searchParams}`, { signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to load reports.');
+        setReports(result as Report[]);
+      })
+      .catch((fetchError: unknown) => {
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') return;
+        setError(fetchError instanceof Error ? fetchError : new Error('Failed to load reports.'));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const reportsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...(doc.data() as Omit<Incident, 'id'>)
-        }));
-        setReports(reportsData);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Error getting reports:', error);
-        setError(error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
+    return () => controller.abort();
   }, [status, limitCount]);
 
   return { reports, loading, error };

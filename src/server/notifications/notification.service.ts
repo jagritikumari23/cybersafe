@@ -1,7 +1,7 @@
 // Placeholder for Notification Service
 // This service would be responsible for sending various notifications (email, SMS, in-app).
 // It would integrate with services like SendGrid (for email), Twilio (for SMS),
-// or Firebase Cloud Messaging (for push notifications).
+// or Supabase Realtime (for in-app notifications).
 
 /**
  * @fileOverview Placeholder for a notification service.
