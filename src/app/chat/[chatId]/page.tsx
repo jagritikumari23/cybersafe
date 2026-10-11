@@ -3,9 +3,11 @@ import ChatInterface from '@/components/chat-interface';
 import { Suspense } from 'react';
 import { Loader2 } from 'lucide-react';
 
-export default function ChatPage({ params, searchParams }: { params: { chatId: string }, searchParams: { reportId?: string } }) {
-  const chatId = params.chatId;
-  const reportId = searchParams.reportId;
+export default async function ChatPage({ params, searchParams }: {
+  params: Promise<{ chatId: string }>;
+  searchParams: Promise<{ reportId?: string }>;
+}) {
+  const [{ chatId }, { reportId }] = await Promise.all([params, searchParams]);
 
   if (!reportId) {
     return (

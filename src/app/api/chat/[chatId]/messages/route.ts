@@ -9,9 +9,9 @@ const MAX_CHAT_ID_LENGTH = 100; // Example constraint
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { chatId: string } }
+  { params }: { params: Promise<{ chatId: string }> }
 ) {
-  const { chatId } = params;
+  const { chatId } = await params;
 
   if (!chatId || typeof chatId !== 'string' || chatId.trim() === '' || chatId.length > MAX_CHAT_ID_LENGTH) {
     return NextResponse.json({ error: 'Invalid or missing chatId' }, { status: 400 });
@@ -20,8 +20,7 @@ export async function POST(
   let body;
   try {
     body = await request.json();
-  } catch (error) {
-    console.error(`[API CHAT ${chatId}] Error parsing JSON body:`, error);
+  } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
@@ -49,20 +48,18 @@ export async function POST(
     }
     chatMessagesStore.get(chatId)!.push(newMessage);
 
-    console.log(`[API CHAT ${chatId}] Stored message. Total for chat: ${chatMessagesStore.get(chatId)!.length}`);
     return NextResponse.json(newMessage, { status: 201 });
 
-  } catch (error) {
-    console.error(`[API CHAT ${chatId}] Internal server error while posting message:`, error);
+  } catch {
     return NextResponse.json({ error: 'Internal server error while processing your message.' }, { status: 500 });
   }
 }
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { chatId: string } }
+  { params }: { params: Promise<{ chatId: string }> }
 ) {
-  const { chatId } = params;
+  const { chatId } = await params;
 
   if (!chatId || typeof chatId !== 'string' || chatId.trim() === '' || chatId.length > MAX_CHAT_ID_LENGTH) {
     return NextResponse.json({ error: 'Invalid or missing chatId' }, { status: 400 });
@@ -70,10 +67,8 @@ export async function GET(
 
   try {
     const messages = chatMessagesStore.get(chatId) || [];
-    console.log(`[API CHAT ${chatId}] Retrieved ${messages.length} messages.`);
     return NextResponse.json(messages, { status: 200 });
-  } catch (error) {
-    console.error(`[API CHAT ${chatId}] Internal server error while getting messages:`, error);
+  } catch {
     return NextResponse.json({ error: 'Internal server error while retrieving messages.' }, { status: 500 });
   }
 }
