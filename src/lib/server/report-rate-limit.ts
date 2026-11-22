@@ -31,10 +31,12 @@ export async function enforceReportRateLimit(
   windowSeconds: number
 ): Promise<NextResponse | null> {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceRoleKey) {
-    console.error('SUPABASE_SERVICE_ROLE_KEY is not configured in server environment.');
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  if (!serviceRoleKey || !supabaseUrl) {
+    console.error('Database configuration (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY) is missing in server environment.');
     return NextResponse.json(
-      { error: 'Service temporarily unavailable. Missing database configuration.' },
+      { error: 'Service temporarily unavailable. Missing database environment variables (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY).' },
       { status: 503 }
     );
   }
@@ -70,6 +72,9 @@ export async function enforceReportRateLimit(
     return null;
   } catch (err: any) {
     console.error('Report rate-limit check failed:', err?.message || err);
-    return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
+    const message = err?.message && err.message.includes('SUPABASE')
+      ? err.message
+      : 'Service temporarily unavailable.';
+    return NextResponse.json({ error: message }, { status: 503 });
   }
 }
