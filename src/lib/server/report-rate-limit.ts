@@ -4,6 +4,26 @@ import { isIP } from 'node:net';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 
+function getClientIp(request: NextRequest): string {
+  const configuredHeader = process.env.CYBERSAFE_TRUSTED_CLIENT_IP_HEADER?.trim().toLowerCase();
+
+  const headersToCheck = configuredHeader
+    ? [configuredHeader]
+    : ['x-vercel-forwarded-for', 'x-real-ip', 'x-forwarded-for'];
+
+  for (const headerName of headersToCheck) {
+    const rawVal = request.headers.get(headerName);
+    if (!rawVal) continue;
+    // Proxies like Vercel or Cloudflare may send a comma-separated list of IPs
+    const candidate = rawVal.split(',')[0].trim();
+    if (candidate && isIP(candidate) !== 0) {
+      return candidate;
+    }
+  }
+
+  return '127.0.0.1';
+}
+
 export async function enforceReportRateLimit(
   request: NextRequest,
   scope: 'submit' | 'track',
@@ -12,24 +32,14 @@ export async function enforceReportRateLimit(
 ): Promise<NextResponse | null> {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceRoleKey) {
-    return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
+    console.error('SUPABASE_SERVICE_ROLE_KEY is not configured in server environment.');
+    return NextResponse.json(
+      { error: 'Service temporarily unavailable. Missing database configuration.' },
+      { status: 503 }
+    );
   }
 
-  const trustedIpHeader = process.env.CYBERSAFE_TRUSTED_CLIENT_IP_HEADER?.trim().toLowerCase();
-  if (process.env.NODE_ENV === 'production' && !trustedIpHeader) {
-    console.error('Trusted client IP header is not configured.');
-    return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
-  }
-
-  const candidateAddress = trustedIpHeader
-    ? request.headers.get(trustedIpHeader)?.trim()
-    : '127.0.0.1';
-  if (!candidateAddress || isIP(candidateAddress) === 0) {
-    console.error('Trusted client IP header is missing or invalid.');
-    return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
-  }
-
-  const address = candidateAddress;
+  const address = getClientIp(request);
   const rateKey = createHmac('sha256', serviceRoleKey)
     .update(`${scope}:${address}`)
     .digest('hex');
@@ -58,8 +68,8 @@ export async function enforceReportRateLimit(
     }
 
     return null;
-  } catch {
-    console.error('Report rate-limit check failed.');
+  } catch (err: any) {
+    console.error('Report rate-limit check failed:', err?.message || err);
     return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   }
 }

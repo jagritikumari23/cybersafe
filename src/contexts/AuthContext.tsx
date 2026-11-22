@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const supabase = getSupabaseBrowserClient();
       supabase.auth.getSession().then(({ data, error }) => {
-        if (error) console.error('Unable to restore Supabase session.');
+        if (error) console.error('Unable to restore Supabase session.', error);
         setCurrentUser(data.session?.user ?? null);
         setLoading(false);
       });
@@ -65,8 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setCurrentUser(session?.user ?? null);
         setLoading(false);
       }));
-    } catch {
-      console.error('Supabase session initialization failed.');
+    } catch (err) {
+      console.error('Supabase session initialization failed:', err);
       setLoading(false);
     }
 

@@ -299,7 +299,7 @@ export default function ReportIncidentForm() {
       router.push(`/track-report?id=${submittedReport.id}`);
 
     } catch (error: any) {
-      console.error('Report submission failed.');
+      console.error('Report submission failed:', error);
       
       toast({
         title: 'Submission Error',
