@@ -56,17 +56,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let subscription: { unsubscribe: () => void } | undefined;
     try {
       const supabase = getSupabaseBrowserClient();
-      supabase.auth.getUser().then(({ data, error }) => {
-        if (error) console.error('Unable to restore Supabase session:', error.message);
-        setCurrentUser(data.user);
+      supabase.auth.getSession().then(({ data, error }) => {
+        if (error) console.error('Unable to restore Supabase session.');
+        setCurrentUser(data.session?.user ?? null);
         setLoading(false);
       });
       ({ data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         setCurrentUser(session?.user ?? null);
         setLoading(false);
       }));
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : 'Supabase is not configured.');
+    } catch {
+      console.error('Supabase session initialization failed.');
       setLoading(false);
     }
 

@@ -55,7 +55,7 @@ const speechToTextFlow = ai.defineFlow(
     outputSchema: SpeechToTextOutputSchema,
   },
   async (input) => {
-    console.log('[SpeechToTextFlow Placeholder] Received audio for transcription. Language:', input.languageCode);
+    console.log('[SpeechToTextFlow Placeholder] Transcription requested.');
     // In a real implementation, you would call a speech model here.
     // For example, using a Google Cloud Speech-to-Text client or a Gemini model capable of audio input.
     // const { output } = await someSpeechModel.transcribe({ audio: input.audioDataUri, language: input.languageCode });

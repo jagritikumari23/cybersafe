@@ -35,7 +35,6 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
 
     async function fetchReportDetailsAndInitializeChat() {
       if (!chatId || !reportId) {
-        console.warn("ChatId or ReportId missing, cannot initialize chat.");
         setErrorState("Essential chat information is missing.");
         setIsLoading(false);
         return;
@@ -55,7 +54,6 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
             // The GET /api/reports/[reportId] currently returns a generic message if not found in memory
             // For a real app, it should return 404. We'll adapt to its current placeholder behavior.
             if (loadedReport && (loadedReport as any).message?.includes("Endpoint for report")) {
-                 console.warn(`Report ${reportId} not found via API. The API might be returning a placeholder.`);
                  throw new Error(`Report with ID ${reportId} not found. Chat cannot be initialized.`);
             }
             throw new Error("Report details could not be loaded. Invalid data received.");
@@ -93,7 +91,7 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
         setMessages(apiMessages);
 
       } catch (error) {
-        console.error("Failed to load/initialize chat:", error);
+        console.error('Unable to load chat.');
         const errorMessage = error instanceof Error ? error.message : "Could not load or initialize chat. Please try again.";
         setErrorState(errorMessage);
         toast({
@@ -147,7 +145,7 @@ export default function ChatInterface({ chatId, reportId }: ChatInterfaceProps) 
       setNewMessageText('');
 
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('Unable to send chat message.');
       const errorMessage = error instanceof Error ? error.message : 'Could not send message. Please try again.';
       toast({
         title: 'Error Sending Message',

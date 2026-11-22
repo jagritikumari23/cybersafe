@@ -34,8 +34,8 @@ export default function EmergencyAlertButton() {
           });
           setIsLoading(false);
         },
-        (error) => {
-          console.error('Error getting location:', error);
+        () => {
+          console.warn('Emergency location lookup failed.');
           toast({
             title: 'Emergency Alert Sent (Location Failed)',
             description: 'Your details have been shared, but we could not access your location. The cybercell helpline will contact you shortly.',

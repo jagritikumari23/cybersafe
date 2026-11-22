@@ -5,6 +5,5 @@
 // and components now fetch data directly from these API endpoints.
 // Client-side localStorage is no longer the primary source of truth for reports.
 
-// console.log("src/lib/report-store.ts is no longer actively used for report data management. See API routes.");
 
 export {}; // Ensures this file is treated as a module if it's empty.

@@ -8,8 +8,8 @@ const getAllChats = (): Record<string, ChatMessage[]> => {
   try {
     const allChats = localStorage.getItem('cyberSafeAllChatMessages');
     return allChats ? JSON.parse(allChats) : {};
-  } catch (error) {
-    console.error("Error reading all chats from localStorage:", error);
+  } catch {
+    console.error('Unable to read local chat data.');
     return {};
   }
 };
@@ -19,8 +19,8 @@ const saveAllChats = (allChats: Record<string, ChatMessage[]>) => {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem('cyberSafeAllChatMessages', JSON.stringify(allChats));
-  } catch (error) {
-    console.error("Error saving all chats to localStorage:", error);
+  } catch {
+    console.error('Unable to save local chat data.');
   }
 };
 

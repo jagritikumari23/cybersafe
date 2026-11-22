@@ -99,7 +99,7 @@ const suggestEscalationFlow = ai.defineFlow(
     
     const validTargets = Object.values(EscalationTarget) as string[];
     if (!output || !validTargets.includes(output.suggestedTarget)) {
-        console.warn(`AI suggested an invalid target: ${output?.suggestedTarget}. Defaulting.`);
+        console.warn('AI suggested an invalid escalation target.');
         return {
             suggestedTarget: EscalationTarget.INTERNAL_REVIEW_FURTHER_INFO_NEEDED,
             reasoning: output?.reasoning || "AI could not determine a valid escalation target, or the suggested target was invalid. Defaulting to internal review and further information gathering."

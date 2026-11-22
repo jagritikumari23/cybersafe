@@ -35,7 +35,7 @@ import { AlertTriangle, CalendarIcon, FileText, Globe, Info, Languages, Loader2,
 import { cn } from '@/lib/utils';
 import { format } from "date-fns"
 import { useToast } from '@/hooks/use-toast';
-import { ReportType, type EvidenceFile, type Report, type SuspectDetails, type IncidentLocation, ComplaintLanguages, type ComplaintLanguageCode } from '@/lib/types';
+import { ReportType, type EvidenceFile, type SuspectDetails, type IncidentLocation, ComplaintLanguages, type ComplaintLanguageCode } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -165,7 +165,7 @@ export default function ReportIncidentForm() {
              city = "Auto-Detected City"; // Placeholder
              state = "Auto-Detected State"; // Placeholder
              country = "India (Approx.)";
-          } catch (e) { console.error("Geocoding simulation error", e); }
+          } catch { console.warn('Reverse geocoding is unavailable.'); }
 
           const locationDetails = `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`;
           setAutoLocation({ latitude, longitude, details: locationDetails, city, state, country });
@@ -174,7 +174,7 @@ export default function ReportIncidentForm() {
           setIsFetchingLocation(false);
         },
         (error) => {
-          console.error('Error getting location:', error);
+          console.warn('Location lookup failed.');
           toast({ title: 'Location Error', description: 'Could not fetch location. Please enter manually or ensure permissions are granted.', variant: 'destructive' });
           form.setValue('locationType', 'manual'); 
           setIsFetchingLocation(false);
@@ -198,7 +198,6 @@ export default function ReportIncidentForm() {
 
   async function onSubmit(data: ReportFormValues) {
     setIsSubmitting(true);
-    console.log('Form data being submitted:', JSON.stringify(data, null, 2)); // Log form data
 
     let incidentLocationPayload: IncidentLocation;
     if (data.locationType === 'auto' && autoLocation) {
@@ -247,8 +246,6 @@ export default function ReportIncidentForm() {
       evidenceFiles: selectedFilesData, // Sending metadata
     };
 
-    console.log('Prepared report payload:', JSON.stringify(reportPayload, null, 2));
-
     try {
       toast({ 
         title: 'Submitting Report...', 
@@ -264,21 +261,12 @@ export default function ReportIncidentForm() {
         body: JSON.stringify(reportPayload),
       });
 
-      console.log('Response status:', response.status); // Log response status
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({
           error: 'Failed to parse error response',
           status: response.status,
           statusText: response.statusText
         }));
-        
-        console.error('Server error response:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorData,
-          headers: Object.fromEntries(response.headers.entries())
-        });
         
         throw new Error(
           errorData.details || 
@@ -287,12 +275,16 @@ export default function ReportIncidentForm() {
         );
       }
 
-      const submittedReport: Report = await response.json();
-      console.log('Report submitted successfully:', submittedReport);
+      const submittedReport: { id: string; trackingSecret: string } = await response.json();
+
+      sessionStorage.setItem(
+        `cybersafe:report-tracking:${submittedReport.id}`,
+        submittedReport.trackingSecret
+      );
 
       toast({
         title: 'Report Submitted Successfully!',
-        description: `Your report ID is ${submittedReport.id}. AI analysis results are available.`,
+        description: 'Your report was saved. Keep the tracking secret shown on the next page private.',
         variant: 'default',
         duration: 8000,
       });
@@ -307,12 +299,7 @@ export default function ReportIncidentForm() {
       router.push(`/track-report?id=${submittedReport.id}`);
 
     } catch (error: any) {
-      console.error('Error details:', {
-        name: error?.name,
-        message: error?.message,
-        stack: error?.stack,
-        formData: data // Log form data that caused the error
-      });
+      console.error('Report submission failed.');
       
       toast({
         title: 'Submission Error',

@@ -6,72 +6,81 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import ReportCard from '@/components/report-card';
 import type { Report } from '@/lib/types';
-// import { getReportsFromStorage } from '@/lib/report-store'; // No longer used
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'; // Added CardFooter
-import { FileSearch, Info, Loader2, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
+import { FileSearch, Loader2, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils'; // cn was missing
+import { cn } from '@/lib/utils';
 
 function TrackReportContent() {
-  const [allReports, setAllReports] = useState<Report[]>([]); // Store all fetched reports
-  const [filteredReports, setFilteredReports] = useState<Report[]>([]);
+  const [report, setReport] = useState<Report | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
   const searchParams = useSearchParams();
   const highlightId = searchParams.get('id');
+  const [reportId, setReportId] = useState(highlightId ?? '');
+  const [lookupId, setLookupId] = useState<string | null>(null);
+  const [trackingSecret, setTrackingSecret] = useState('');
+  const [trackingSecretForId, setTrackingSecretForId] = useState<string | null>(null);
+  const [newTrackingSecret, setNewTrackingSecret] = useState(false);
 
   useEffect(() => {
-    async function fetchReports() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await fetch('/api/reports');
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({error: "Failed to fetch reports."}));
-          throw new Error(errorData.error || `Failed to load reports. Status: ${response.status}`);
-        }
-        const reportsData: Report[] = await response.json();
-        setAllReports(reportsData);
-        setFilteredReports(reportsData); // Initially, all reports are filtered reports
-      } catch (err) {
-        console.error("Error fetching reports:", err);
-        setError(err instanceof Error ? err.message : "An unknown error occurred while fetching reports.");
-        setAllReports([]);
-        setFilteredReports([]);
-      } finally {
-        setIsLoading(false);
-      }
+    setReportId(highlightId ?? '');
+    setLookupId(highlightId);
+    setReport(null);
+    setError(null);
+
+    if (!highlightId) {
+      setTrackingSecret('');
+      setTrackingSecretForId(null);
+      setNewTrackingSecret(false);
+      setIsLoading(false);
+      return;
     }
-    fetchReports();
-  }, []);
+
+    const secretStorageKey = `cybersafe:report-tracking:${highlightId}`;
+    const savedSecret = sessionStorage.getItem(secretStorageKey);
+    if (savedSecret) sessionStorage.removeItem(secretStorageKey);
+    if (savedSecret) {
+      setTrackingSecret(savedSecret);
+      setTrackingSecretForId(highlightId);
+      setNewTrackingSecret(true);
+    } else {
+      setTrackingSecret('');
+      setTrackingSecretForId(null);
+      setNewTrackingSecret(false);
+    }
+  }, [highlightId]);
 
   useEffect(() => {
-    // Filter reports whenever searchTerm or allReports changes
-    const lowerSearchTerm = searchTerm.toLowerCase();
-    const newFilteredReports = allReports.filter(report =>
-      report.id.toLowerCase().includes(lowerSearchTerm) ||
-      report.type.toLowerCase().includes(lowerSearchTerm) ||
-      (report.aiTriage?.category && report.aiTriage.category.toLowerCase().includes(lowerSearchTerm)) ||
-      (report.description && report.description.toLowerCase().includes(lowerSearchTerm))
-    );
-    setFilteredReports(newFilteredReports);
-
-    if (highlightId && !isLoading) {
-      // Scroll to highlighted report after reports are loaded and filtered
-      const element = document.getElementById(`report-${highlightId}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Optional: Add a more prominent highlight style directly or remove after a timeout
-        // element.classList.add('ring-4', 'ring-offset-2', 'ring-primary-focus'); 
-        // setTimeout(() => element.classList.remove('ring-4', 'ring-offset-2', 'ring-primary-focus'), 3000);
-      }
+    if (!lookupId || !trackingSecret || trackingSecretForId !== lookupId) {
+      setIsLoading(false);
+      return;
     }
-  }, [searchTerm, allReports, highlightId, isLoading]);
 
+    const controller = new AbortController();
+    setIsLoading(true);
+    fetch(`/api/reports/${encodeURIComponent(lookupId)}`, {
+      signal: controller.signal,
+      headers: { 'x-report-tracking-secret': trackingSecret },
+    })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to load this report.');
+        setReport(result as Report);
+      })
+      .catch((fetchError: unknown) => {
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') return;
+        setError('Report not found or tracking credentials are invalid.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [lookupId, trackingSecret, trackingSecretForId]);
 
   if (isLoading) {
     return (
@@ -83,52 +92,75 @@ function TrackReportContent() {
     );
   }
 
-  if (error) {
-    return (
-      <Alert variant="destructive" className="mt-6">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>Error Loading Reports</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    );
-  }
-
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-        <h1 className="text-3xl font-bold">Track Your Reports</h1>
-        <div className="w-full md:w-1/2 lg:w-1/3">
+        <h1 className="text-3xl font-bold">Track a Report</h1>
+        <form
+          className="flex w-full gap-2 md:w-1/2 lg:w-1/3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const id = reportId.trim();
+            if (!id || !trackingSecret.trim()) return;
+            setReport(null);
+            setError(null);
+            setNewTrackingSecret(false);
+            setTrackingSecretForId(id);
+            setLookupId(id);
+          }}
+          aria-label="Track a report"
+        >
           <Input
             type="text"
-            placeholder="Search by ID, type, category, or keywords..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Report ID"
+            value={reportId}
+            onChange={(event) => setReportId(event.target.value)}
             className="w-full"
-            aria-label="Search reports"
+            aria-label="Report ID"
           />
-        </div>
+          <Input
+            type="text"
+            placeholder="Tracking secret"
+            value={trackingSecret}
+            onChange={(event) => setTrackingSecret(event.target.value)}
+            className="w-full"
+            aria-label="Tracking secret"
+            autoComplete="off"
+          />
+          <Button type="submit" disabled={!reportId.trim() || !trackingSecret.trim()}>Track</Button>
+        </form>
       </div>
 
-      {highlightId && (
+      {lookupId && trackingSecretForId === lookupId && (
         <Alert className="mb-6 border-primary bg-primary/5">
-          <Info className="h-4 w-4 text-primary" />
-          <AlertTitle className="text-primary">Report Highlighted</AlertTitle>
+          <FileSearch className="h-4 w-4 text-primary" />
+          <AlertTitle className="text-primary">{newTrackingSecret ? 'Save Your Tracking Secret' : 'Private Report Lookup'}</AlertTitle>
           <AlertDescription>
-            Showing details for report ID: {highlightId}. You can find other reports below.
+            {newTrackingSecret
+              ? 'This secret is shown only once. Store it safely; you need both the report ID and secret to view this report again.'
+              : 'The report ID alone cannot open the report. Keep the tracking secret private.'}
           </AlertDescription>
         </Alert>
       )}
 
-      {filteredReports.length === 0 ? (
+      {error ? (
+        <Alert variant="destructive" className="mt-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Unable to Load Report</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : report ? (
+        <div className={cn('rounded-lg', report.id === lookupId ? 'ring-2 ring-primary' : '')}>
+          <ReportCard report={report} />
+        </div>
+      ) : (
         <Card className="text-center py-12 shadow-md">
           <CardHeader>
             <FileSearch className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-            <CardTitle className="text-2xl">No Reports Found</CardTitle>
+            <CardTitle className="text-2xl">Enter Your Report ID</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground mb-6">
-              {searchTerm ? "No reports match your search criteria." : "No reports have been submitted yet, or there was an issue fetching them."}
-            </p>
+            <p className="text-muted-foreground mb-6">Use the report ID from your submission confirmation to view its status.</p>
           </CardContent>
           <CardFooter className="justify-center">
             <Button asChild>
@@ -136,14 +168,6 @@ function TrackReportContent() {
             </Button>
           </CardFooter>
         </Card>
-      ) : (
-        <div className="space-y-6">
-          {filteredReports.map((report) => (
-            <div key={report.id} id={`report-${report.id}`} className={cn(report.id === highlightId ? "ring-2 ring-primary shadow-lg rounded-lg" : "")}>
-                 <ReportCard report={report} />
-            </div>
-          ))}
-        </div>
       )}
     </div>
   );

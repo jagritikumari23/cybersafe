@@ -81,8 +81,8 @@ export default function CyberRiskForm() {
         description: `Your Cyber Risk Score is ${result.score}/100.`,
         variant: result.level === 'Low' || result.level === 'Medium' ? 'default' : 'destructive',
       });
-    } catch (error) {
-      console.error('Error calculating risk score:', error);
+    } catch {
+      console.error('Risk score calculation failed.');
       toast({
         title: 'Error',
         description: 'Could not calculate your risk score. Please try again.',

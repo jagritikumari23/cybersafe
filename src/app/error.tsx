@@ -12,8 +12,7 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Log the error to an error reporting service
-    console.error(error);
+    console.error('An unexpected application error occurred.');
   }, [error]);
 
   return (
@@ -23,9 +22,6 @@ export default function Error({
       <p className="mb-8 max-w-md text-lg text-foreground/80">
         We encountered an unexpected issue. Please try again, or contact support if the problem persists.
       </p>
-      {error?.message && (
-         <p className="mb-4 text-sm text-muted-foreground bg-muted p-2 rounded-md">Error details: {error.message}</p>
-      )}
       <div className="flex gap-4">
         <Button
           onClick={

@@ -22,27 +22,27 @@ export interface SmsParams {
 
 export class NotificationService {
   constructor() {
-    // Initialize email/SMS provider clients
-    console.log('[NotificationService Placeholder] Initialized. (Would connect to SendGrid, Twilio, etc.)');
+    // Initialize email/SMS provider clients.
   }
 
   async sendEmail(params: EmailParams): Promise<void> {
-    console.log(`[NotificationService Placeholder] Sending email to ${params.to} with subject "${params.subject}"`);
-    console.log(`Body (HTML): ${params.htmlBody.substring(0, 100)}...`);
+    void params;
     // In a real system, use the email provider's SDK to send.
     // e.g., await sendgridClient.send({ to: params.to, from: 'noreply@cybersafe.gov', subject: params.subject, html: params.htmlBody });
     return Promise.resolve();
   }
 
   async sendSms(params: SmsParams): Promise<void> {
-    console.log(`[NotificationService Placeholder] Sending SMS to ${params.to}: "${params.message}"`);
+    void params;
     // In a real system, use the SMS provider's SDK.
     // e.g., await twilioClient.messages.create({ to: params.to, from: '+1CYBERSAFE', body: params.message });
     return Promise.resolve();
   }
 
   async sendInAppNotification(userId: string, message: string, link?: string): Promise<void> {
-    console.log(`[NotificationService Placeholder] Sending in-app notification to user ${userId}: "${message}" ${link ? `(link: ${link})` : ''}`);
+    void userId;
+    void message;
+    void link;
     // This would typically involve writing to a 'notifications' collection in a database
     // that the user's client application polls or subscribes to (e.g., via WebSockets).
     return Promise.resolve();

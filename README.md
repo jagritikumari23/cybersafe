@@ -46,8 +46,16 @@ The CyberSafe application is designed to guide users through the process of repo
 ### Setup Instructions
 
 1. Copy `.env.example` to `.env.local` and set the Supabase project URL, anon key, and service-role key. Keep the service-role key server-side and out of source control.
-2. Run `supabase/schema.sql` in the Supabase SQL Editor to create the reports table.
+2. Run the current `supabase/schema.sql` in the Supabase SQL Editor. It creates or updates the reports table and installs the shared rate-limit function used by the API.
 3. In Supabase Authentication settings, enable email/password and Google if Google sign-in is needed. Add the app's local and deployed URLs to the allowed redirect URLs.
+
+### Report access and rate limits
+
+Reports are currently submitted anonymously. Each successful submission returns a report ID and a separate random tracking secret. Save both; the secret is shown once and is required to view the private report. The database stores only a hash of that secret. The report API limits submissions to 5 per 15 minutes and tracking attempts to 30 per 15 minutes per client IP, using Supabase as shared storage.
+
+In production, set `CYBERSAFE_TRUSTED_CLIENT_IP_HEADER` to the exact client-IP header your hosting proxy overwrites. Configure the proxy to strip any incoming value for that header and inject the verified client IP. The app fails closed with `503` if production has no configured, valid client-IP header. Local development uses one loopback rate-limit bucket.
+
+Reports created before the tracking-secret column was installed do not have a secret and cannot be retrieved through the protected tracking endpoint. For development data, submit replacement test reports. For existing production reports, design a secure owner-verification and secret-issuance process before migrating access; do not restore ID-only access.
 
 
 ### Prerequisites

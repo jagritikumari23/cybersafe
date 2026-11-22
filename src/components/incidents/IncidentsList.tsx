@@ -26,8 +26,8 @@ export default function IncidentsList() {
           createdAt: report.submissionDate,
         })));
         setError(null);
-      } catch (err) {
-        console.error('Failed to fetch incidents:', err);
+      } catch {
+        console.error('Failed to fetch incidents.');
         setError('Failed to load incidents. Please try again later.');
       } finally {
         setLoading(false);
