@@ -31,12 +31,12 @@ export async function enforceReportRateLimit(
   windowSeconds: number
 ): Promise<NextResponse | null> {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 
   if (!serviceRoleKey || !supabaseUrl) {
-    console.error('Database configuration (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY) is missing in server environment.');
+    console.error('Database configuration (SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL) is missing in server environment.');
     return NextResponse.json(
-      { error: 'Service temporarily unavailable. Missing database environment variables (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY).' },
+      { error: 'Service temporarily unavailable. Missing database environment variables.' },
       { status: 503 }
     );
   }

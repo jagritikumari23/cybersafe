@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
       ? String(error.code)
       : 'unknown';
     console.error('Error creating report. Supabase code:', errorCode);
-    if (errorMessage.includes('Set NEXT_PUBLIC_SUPABASE_URL')) {
+    if (errorMessage.includes('SUPABASE_URL')) {
       return NextResponse.json(
         { error: errorMessage },
         { status: 503 }
